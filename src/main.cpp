@@ -147,6 +147,9 @@ void loop() {
     default:
         break;
     }
+
+    // 3. 统一输出 BLE 队列数据（所有模式都需要，WiFi 模式下不产生数据所以是空操作）
+    bleScanner.flushOutput();
 }
 
 void loopBleScanMode() {
