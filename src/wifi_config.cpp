@@ -1,10 +1,15 @@
 #include "wifi_config.h"
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include "ble_scanner.h"
 #include "webpage.h"   // 独立 HTML 页面（编译期由 embed_html.py 生成）
 
 // =============== WifiConfigServer ===============
-WifiConfigServer::WifiConfigServer() : _config(nullptr), _server(nullptr) {}
+WifiConfigServer::WifiConfigServer() : _config(nullptr), _server(nullptr), _bleScanner(nullptr) {}
+
+void WifiConfigServer::setBleScanner(BleScanner* scanner) {
+    _bleScanner = scanner;
+}
 
 bool WifiConfigServer::begin(ConfigManager* config) {
     _config = config;
@@ -43,7 +48,6 @@ void WifiConfigServer::_setupRoutes() {
     _server->on("/api/entry",          HTTP_POST, [this](){ _handleAddEntry(); });
     _server->on("/api/entry",          HTTP_DELETE, [this](){ _handleDeleteEntry(); });
     _server->on("/api/scanparams",     HTTP_GET,  [this](){ _handleGetScanParams(); });
-    _server->on("/api/scanparams",     HTTP_POST, [this](){ _handleSaveScanParams(); });
     _server->on("/api/reboot",         HTTP_POST, [this](){ _handleReboot(); });
     _server->onNotFound([this](){ _handleNotFound(); });
 }
@@ -60,9 +64,12 @@ void WifiConfigServer::_handleGetConfig() {
 void WifiConfigServer::_handleSaveConfig() {
     String body = _server->arg("plain");
     if (_config->whitelistFromJson(body)) {
-        // whitelistFromJson 只更新 whitelist，不会修改 scanParams
-        // 直接手动保存完整配置（含当前内存中的 scanParams）
-        _config->save();  // 显式保存完整状态
+        // whitelistFromJson 同时解析 whitelist 和 scanParams
+        _config->save();
+        // 通知 BLE 扫描器热应用新的扫描参数
+        if (_bleScanner) {
+            _bleScanner->applyScanParams();
+        }
         _server->send(200, "application/json", "{\"message\":\"保存成功\",\"status\":\"ok\"}");
         Serial.println("[WiFi] Config saved via web");
     } else {
@@ -125,31 +132,6 @@ void WifiConfigServer::_handleGetScanParams() {
     String out;
     serializeJson(doc, out);
     _server->send(200, "application/json; charset=utf-8", out);
-}
-
-void WifiConfigServer::_handleSaveScanParams() {
-    if (!_config) {
-        _server->send(500, "application/json", "{\"status\":\"error\",\"message\":\"config not available\"}");
-        return;
-    }
-    String body = _server->arg("plain");
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, body);
-    if (err) {
-        _server->send(400, "application/json",
-            "{\"message\":\"JSON 解析失败\",\"status\":\"error\"}");
-        return;
-    }
-    BleScanParams p;
-    p.scanInterval     = doc["scanInterval"]   | 100;
-    p.scanWindow       = doc["scanWindow"]     | 99;
-    p.scanType         = doc["scanType"]       | 1;
-    p.scanDuplicate    = doc["scanDuplicate"]  | false;
-    p.ownAddrType      = doc["ownAddrType"]    | 0;
-    p.scanFilterPolicy = doc["scanFilterPolicy"] | 0;
-    _config->setScanParams(p);
-    _server->send(200, "application/json", "{\"message\":\"扫描参数已保存\",\"status\":\"ok\"}");
-    Serial.println("[WiFi] Scan params saved via web");
 }
 
 void WifiConfigServer::_handleReboot() {

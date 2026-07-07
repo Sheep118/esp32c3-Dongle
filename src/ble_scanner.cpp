@@ -16,6 +16,7 @@ BleScanner::BleScanner()
     , _scanning(false)
     , _lastCount(0)
     , _packetCount(0)
+    , _matchedCount(0)
     , _txHead(0)
     , _txTail(0)
 {
@@ -67,6 +68,7 @@ void BleScanner::startScan() {
         _scanStartMs = millis();
         _lastCount = 0;
         _packetCount = 0;
+        _matchedCount = 0;
         _pBLEScan->start(_scanDuration, scanCompleteCB, false); // 非阻塞模式
         char buf[48];
         snprintf(buf, sizeof(buf), "$SCAN_START|DURATION:%u", _scanDuration);
@@ -90,8 +92,9 @@ void BleScanner::scanCompleteCB(BLEScanResults results) {
     //（results.getCount() 在非阻塞 + wantDuplicates 模式下只统计唯一设备地址，不准确）
     self->_lastCount = self->_packetCount;
 
-    char buf[48];
-    snprintf(buf, sizeof(buf), "$SCAN_END|COUNT:%d", self->_lastCount);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "$SCAN_END|TOTAL:%d|MATCHED:%d",
+             self->_packetCount, self->_matchedCount);
     self->_enqueue(buf);
 
     self->_pBLEScan->clearResults();
@@ -170,11 +173,13 @@ bool BleScanner::_matchWhitelist(BLEAdvertisedDevice& device) const {
  * 格式化后通过 _enqueue 压入环形队列，由主 loop 的 flushOutput() 统一输出。
  */
 void BleScanner::_outputResult(BLEAdvertisedDevice& device) {
-    // 自增计数器：记录本轮实际收到的广播包数
-    // 必须在 _matchWhitelist 之前递增，因为 COUNT 统计的是扫描到的所有包
+    // 自增计数器：记录本轮实际收到的广播包总数
     _packetCount++;
 
     if (!_matchWhitelist(device)) return;
+
+    // 匹配白名单，自增匹配计数器
+    _matchedCount++;
 
     char buf[TX_LINE_MAX];
     int pos = 0;

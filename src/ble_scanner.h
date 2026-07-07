@@ -60,7 +60,8 @@ private:
     uint32_t       _scanStartMs;
     bool           _scanning;
     size_t         _lastCount;
-    volatile size_t _packetCount;  // BTC_TASK 中自增，记录本轮实际收到的广播包数
+    volatile size_t _packetCount;   // BTC_TASK 中自增，记录本轮实际收到的广播包总数
+    volatile size_t _matchedCount;  // BTC_TASK 中自增，记录匹配白名单的包数
 
     // ---- 无锁环形队列 ----
     char  _txQueue[TX_QUEUE_SIZE][TX_LINE_MAX];

@@ -5,6 +5,8 @@
 #include <WebServer.h>
 #include "config_manager.h"
 
+class BleScanner; // 前向声明
+
 /**
  * Wi-Fi AP 配置
  */
@@ -22,6 +24,9 @@ class WifiConfigServer {
 public:
     WifiConfigServer();
 
+    /** 设置 BLE Scanner 引用（用于热应用扫描参数） */
+    void setBleScanner(BleScanner* scanner);
+
     /** 启动 AP 和 Web 服务器 */
     bool begin(ConfigManager* config);
 
@@ -34,6 +39,7 @@ public:
 private:
     ConfigManager* _config;
     WebServer*     _server;
+    BleScanner*    _bleScanner;
 
     /** 注册所有 API 路由 */
     void _setupRoutes();
@@ -59,9 +65,6 @@ private:
 
     /** 获取 BLE 扫描参数 */
     void _handleGetScanParams();
-
-    /** 保存 BLE 扫描参数 */
-    void _handleSaveScanParams();
 
     /** 重启设备 */
     void _handleReboot();

@@ -71,8 +71,6 @@ tr:hover{background:#f8f9fa}
       </select>
     </div>
   </div>
-  <div class="action-bar">
-    <button class="btn btn-primary" onclick="saveScanParams()">💾 保存扫描参数</button>
   </div>
 </div>
 
@@ -109,7 +107,7 @@ tr:hover{background:#f8f9fa}
     </tbody>
   </table>
   <div class="action-bar">
-    <button class="btn btn-success" onclick="saveWhitelist()">💾 保存全部</button>
+    <button class="btn btn-success" onclick="saveAll()">💾 保存全部</button>
     <button class="btn btn-danger" onclick="clearAll()">🗑 清空</button>
     <button class="btn btn-danger" onclick="reboot()">🔄 重启设备</button>
   </div>
@@ -183,13 +181,25 @@ function deleteEntry(idx) {
   renderTable();
 }
 
-function saveWhitelist() {
+function saveAll() {
+  var sp = {
+    scanInterval: parseInt(document.getElementById('scanInterval').value) || 100,
+    scanWindow: parseInt(document.getElementById('scanWindow').value) || 99,
+    scanType: parseInt(document.getElementById('scanType').value) || 1,
+    scanDuplicate: document.getElementById('scanDuplicate').value === '1',
+    ownAddrType: 0,
+    scanFilterPolicy: 0
+  };
+  var payload = {
+    whitelist: currentConfig,
+    scanParams: sp
+  };
   fetch('/api/config', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({whitelist:currentConfig})
+    body:JSON.stringify(payload)
   }).then(function(r){return r.json()}).then(function(d){
-    alert(d.message || '白名单保存成功');
+    alert(d.message || '保存成功');
   });
 }
 
@@ -198,25 +208,6 @@ function clearAll() {
   fetch('/api/config',{method:'DELETE'}).then(function(r){return r.json()}).then(function(d){
     alert(d.message || '已清空');
     loadConfig();
-  });
-}
-
-// ========== 扫描参数保存 ==========
-function saveScanParams() {
-  var params = {
-    scanInterval: parseInt(document.getElementById('scanInterval').value) || 100,
-    scanWindow: parseInt(document.getElementById('scanWindow').value) || 99,
-    scanType: parseInt(document.getElementById('scanType').value) || 1,
-    scanDuplicate: document.getElementById('scanDuplicate').value === '1',
-    ownAddrType: 0,
-    scanFilterPolicy: 0
-  };
-  fetch('/api/scanparams', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(params)
-  }).then(function(r){return r.json()}).then(function(d){
-    alert(d.message || '扫描参数保存成功，重启后生效');
   });
 }
 
