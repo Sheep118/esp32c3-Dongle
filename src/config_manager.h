@@ -5,6 +5,15 @@
 #include <vector>
 
 /**
+ * 设备工作模式
+ */
+enum class DeviceMode : uint8_t {
+    SCANNER    = 0,   // BLE 扫描器
+    ADVERTISER = 1,   // BLE 模拟广播
+    UART_TRANS = 2    // BLE 串口透传（预留，后续实现）
+};
+
+/**
  * 白名单条目 —— 一条过滤规则
  */
 struct WhitelistEntry {
@@ -35,54 +44,61 @@ struct BleScanParams {
 };
 
 /**
+ * BLE 模拟广播参数配置
+ */
+struct BleAdvConfig {
+    String  customMac;       // 自定义 MAC 地址 (空=使用默认)
+    String  advDataHex;      // 广播数据 HEX 字符串 (如 "02010603034C00")
+    String  scanRespHex;     // 扫描响应数据 HEX 字符串
+    int8_t  txPower = 0;     // 发射功率 (dBm, 范围 -12 ~ +9)
+    uint16_t advInterval = 100;  // 广播间隔 (单位 0.625ms, 默认 100≈62.5ms)
+    uint32_t advDuration = 0;    // 广播时长 (秒, 0=持续广播)
+    uint8_t  advType = 0;        // 0=ADV_IND, 1=ADV_DIRECT, 2=ADV_NONCONN
+};
+
+/**
  * 配置管理器
- * - 使用 LittleFS 存储白名单 + BLE 扫描参数 JSON
- * - 提供读写接口，WiFi 配置页和 BLE 扫描器共用
+ * - 使用 LittleFS 存储全部配置 JSON
+ * - 提供读写接口，WiFi 配置页、BLE 扫描器、BLE 广播器共用
  */
 class ConfigManager {
 public:
     /** 初始化文件系统，加载配置 */
     bool begin();
 
-    /** 获取白名单列表 */
+    // ===== 设备模式 =====
+    DeviceMode getDeviceMode() const;
+    void setDeviceMode(DeviceMode mode);
+
+    // ===== 白名单 =====
     const std::vector<WhitelistEntry>& getWhitelist() const;
-
-    /** 设置白名单列表（会立即保存） */
     bool setWhitelist(const std::vector<WhitelistEntry>& list);
-
-    /** 添加一条白名单条目 */
     bool addEntry(const WhitelistEntry& entry);
-
-    /** 删除指定索引的条目 */
     bool removeEntry(size_t index);
-
-    /** 清空白名单 */
     bool clearWhitelist();
 
-    /** 将白名单导出为 JSON 字符串（用于 Web 页面） */
-    String whitelistToJson() const;
-
-    /** 从 JSON 字符串导入白名单（用于 Web 页面提交） */
-    bool whitelistFromJson(const String& json);
-
-    /** 获取当前模式（true=WiFi配置模式，false=BLE扫描模式） */
-    bool isWifiMode() const;
-
-    /** 设置模式 */
-    void setWifiMode(bool wifiMode);
-
-    /** 获取 BLE 扫描参数 */
+    // ===== BLE 扫描参数 =====
     BleScanParams getScanParams() const;
-
-    /** 设置 BLE 扫描参数（立即保存） */
     void setScanParams(const BleScanParams& params);
 
-    /** 将当前内存状态保存到 LittleFS */
+    // ===== BLE 广播参数 =====
+    BleAdvConfig getAdvConfig() const;
+    void setAdvConfig(const BleAdvConfig& cfg);
+
+    // ===== JSON 序列化/反序列化 =====
+    String whitelistToJson() const;
+    bool whitelistFromJson(const String& json);
+
+    // ===== 杂项 =====
+    bool isWifiMode() const;
+    void setWifiMode(bool wifiMode);
     bool save();
 
 private:
+    DeviceMode  _deviceMode = DeviceMode::SCANNER;
     std::vector<WhitelistEntry> _whitelist;
     BleScanParams _scanParams;
+    BleAdvConfig  _advConfig;
     bool _wifiMode = false;
 
     bool _save();

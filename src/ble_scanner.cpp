@@ -14,6 +14,7 @@ BleScanner::BleScanner()
     , _scanDuration(5)
     , _scanStartMs(0)
     , _scanning(false)
+    , _restartPending(false)
     , _lastCount(0)
     , _packetCount(0)
     , _matchedCount(0)
@@ -69,7 +70,8 @@ void BleScanner::startScan() {
         _lastCount = 0;
         _packetCount = 0;
         _matchedCount = 0;
-        _pBLEScan->start(_scanDuration, scanCompleteCB, false); // 非阻塞模式
+        // 非阻塞模式启动扫描，完成后回调 scanCompleteCB
+        _pBLEScan->start(_scanDuration, scanCompleteCB, false);
         char buf[48];
         snprintf(buf, sizeof(buf), "$SCAN_START|DURATION:%u", _scanDuration);
         _enqueue(buf);
@@ -77,10 +79,18 @@ void BleScanner::startScan() {
 }
 
 void BleScanner::update() {
-    if (!_scanning || !_pBLEScan) return;
+    if (!_pBLEScan) return;
 
-    // 非阻塞扫描：start() 已启动扫描，等待 scanCompleteCB 回调
-    // update() 只需要处理环形队列输出
+    // 检查是否有重启待处理（由 scanCompleteCB 设置的标记）
+    if (_restartPending) {
+        _restartPending = false;
+        startScan();
+    }
+}
+
+void BleScanner::requestRestart() {
+    // 可在 BLE 回调上下文中安全调用：仅设置标记，不调任何 BLE API
+    _restartPending = true;
 }
 
 void BleScanner::scanCompleteCB(BLEScanResults results) {
@@ -97,10 +107,10 @@ void BleScanner::scanCompleteCB(BLEScanResults results) {
              self->_packetCount, self->_matchedCount);
     self->_enqueue(buf);
 
-    self->_pBLEScan->clearResults();
-
-    // 立即开始下一轮（间隔仅微秒级）
-    self->startScan();
+    // ⚠ 不能在此回调中直接调 startScan()（= BLEScan::start()）
+    // 因为 start() 内部获取信号量，而回调仍在 BLE 事件上下文中
+    // 只能设置标记，让 loop() 中的 update() 择机重启
+    self->requestRestart();
 }
 
 // ========== 环形队列 ==========
@@ -169,16 +179,12 @@ bool BleScanner::_matchWhitelist(BLEAdvertisedDevice& device) const {
 /**
  * 输出格式：$BLE|MAC:XX:XX:XX:XX:XX:XX|RSSI:-42|ADDR:0|NAME:xxx|MANUF:AABBCC|UUID:xxx
  *
- * 注意：此函数在 BTC_TASK 上下文中调用，绝对不能调用 Serial 系列函数。
- * 格式化后通过 _enqueue 压入环形队列，由主 loop 的 flushOutput() 统一输出。
+ * 注意：BTC_TASK 上下文，零堆分配，全部栈内存 snprintf。
  */
 void BleScanner::_outputResult(BLEAdvertisedDevice& device) {
-    // 自增计数器：记录本轮实际收到的广播包总数
     _packetCount++;
 
     if (!_matchWhitelist(device)) return;
-
-    // 匹配白名单，自增匹配计数器
     _matchedCount++;
 
     char buf[TX_LINE_MAX];
@@ -202,13 +208,13 @@ void BleScanner::_outputResult(BLEAdvertisedDevice& device) {
         if (r > 0) pos += (r < (int)sizeof(buf) - pos) ? r : (int)sizeof(buf) - pos - 1;
     }
 
-    // 厂商数据 HEX
+    // 厂商数据 HEX — 不截断，全部输出
     if (device.haveManufacturerData()) {
         std::string manuf = device.getManufacturerData();
         int r = snprintf(buf + pos, sizeof(buf) - pos, "|MANUF:");
         if (r > 0) pos += (r < (int)sizeof(buf) - pos) ? r : (int)sizeof(buf) - pos - 1;
         for (size_t i = 0; i < manuf.length(); i++) {
-            if ((int)sizeof(buf) - pos < 4) break;
+            if ((int)sizeof(buf) - pos < 4) { pos = sizeof(buf) - 1; break; }
             r = snprintf(buf + pos, sizeof(buf) - pos, "%02X", (uint8_t)manuf[i]);
             if (r < 0) break;
             pos += r;
@@ -217,8 +223,10 @@ void BleScanner::_outputResult(BLEAdvertisedDevice& device) {
 
     // Service UUID
     if (device.haveServiceUUID()) {
-        snprintf(buf + pos, sizeof(buf) - pos, "|UUID:%s",
-                 device.getServiceUUID().toString().c_str());
+        if ((int)sizeof(buf) - pos > 8) {
+            snprintf(buf + pos, sizeof(buf) - pos, "|UUID:%s",
+                     device.getServiceUUID().toString().c_str());
+        }
     }
 
     _enqueue(buf);

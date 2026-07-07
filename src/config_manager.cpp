@@ -82,16 +82,18 @@ bool ConfigManager::clearWhitelist() {
 
 String ConfigManager::whitelistToJson() const {
     JsonDocument doc;
-    JsonArray arr = doc["whitelist"].to<JsonArray>();
+    doc["deviceMode"] = static_cast<uint8_t>(_deviceMode);
+    doc["wifiMode"]   = _wifiMode;
 
+    // 白名单
+    JsonArray arr = doc["whitelist"].to<JsonArray>();
     for (const auto& e : _whitelist) {
         JsonObject obj = arr.add<JsonObject>();
-        obj["type"]    = static_cast<int>(e.type);
-        obj["value"]   = e.value;
+        obj["type"]     = static_cast<int>(e.type);
+        obj["value"]    = e.value;
         obj["companyId"] = e.companyId;
-        obj["enabled"] = e.enabled;
+        obj["enabled"]  = e.enabled;
     }
-    doc["wifiMode"] = _wifiMode;
 
     // BLE 扫描参数
     JsonObject sp = doc["scanParams"].to<JsonObject>();
@@ -101,6 +103,16 @@ String ConfigManager::whitelistToJson() const {
     sp["scanDuplicate"]    = _scanParams.scanDuplicate;
     sp["ownAddrType"]      = _scanParams.ownAddrType;
     sp["scanFilterPolicy"] = _scanParams.scanFilterPolicy;
+
+    // BLE 广播参数
+    JsonObject ap = doc["advConfig"].to<JsonObject>();
+    ap["customMac"]     = _advConfig.customMac;
+    ap["advDataHex"]    = _advConfig.advDataHex;
+    ap["scanRespHex"]   = _advConfig.scanRespHex;
+    ap["txPower"]       = _advConfig.txPower;
+    ap["advInterval"]   = _advConfig.advInterval;
+    ap["advDuration"]   = _advConfig.advDuration;
+    ap["advType"]       = _advConfig.advType;
 
     String out;
     serializeJson(doc, out);
@@ -115,8 +127,19 @@ bool ConfigManager::whitelistFromJson(const String& json) {
         return false;
     }
 
-    _whitelist.clear();
+    // 设备模式
+    if (doc["deviceMode"].is<uint8_t>()) {
+        _deviceMode = static_cast<DeviceMode>(doc["deviceMode"].as<uint8_t>());
+    } else if (doc["deviceMode"].is<int>()) {
+        _deviceMode = static_cast<DeviceMode>(doc["deviceMode"].as<int>());
+    }
 
+    if (doc["wifiMode"].is<bool>()) {
+        _wifiMode = doc["wifiMode"].as<bool>();
+    }
+
+    // 白名单
+    _whitelist.clear();
     if (doc["whitelist"].is<JsonArray>()) {
         for (const auto& item : doc["whitelist"].as<JsonArray>()) {
             WhitelistEntry e;
@@ -126,10 +149,6 @@ bool ConfigManager::whitelistFromJson(const String& json) {
             e.enabled  = item["enabled"] | true;
             _whitelist.push_back(e);
         }
-    }
-
-    if (doc["wifiMode"].is<bool>()) {
-        _wifiMode = doc["wifiMode"].as<bool>();
     }
 
     // BLE 扫描参数
@@ -143,7 +162,37 @@ bool ConfigManager::whitelistFromJson(const String& json) {
         _scanParams.scanFilterPolicy = sp["scanFilterPolicy"] | 0;
     }
 
+    // BLE 广播参数
+    JsonObject ap = doc["advConfig"];
+    if (!ap.isNull()) {
+        _advConfig.customMac     = ap["customMac"]   | "";
+        _advConfig.advDataHex    = ap["advDataHex"]  | "";
+        _advConfig.scanRespHex   = ap["scanRespHex"] | "";
+        _advConfig.txPower       = ap["txPower"]     | 0;
+        _advConfig.advInterval   = ap["advInterval"] | 100;
+        _advConfig.advDuration   = ap["advDuration"] | 0;
+        _advConfig.advType       = ap["advType"]     | 0;
+    }
+
     return true;
+}
+
+DeviceMode ConfigManager::getDeviceMode() const {
+    return _deviceMode;
+}
+
+void ConfigManager::setDeviceMode(DeviceMode mode) {
+    _deviceMode = mode;
+    _save();
+}
+
+BleAdvConfig ConfigManager::getAdvConfig() const {
+    return _advConfig;
+}
+
+void ConfigManager::setAdvConfig(const BleAdvConfig& cfg) {
+    _advConfig = cfg;
+    _save();
 }
 
 BleScanParams ConfigManager::getScanParams() const {

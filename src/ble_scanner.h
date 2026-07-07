@@ -14,18 +14,25 @@
 #define TX_LINE_MAX    256
 
 /**
- * 输出格式说明（USB-CDC 串口）：
- *   $BLE|MAC:AA:BB:CC:DD:EE:FF|RSSI:-42|ADDR:1|NAME:DeviceName|MANUF:4C00|UUID:0000fdaa-...
- *   $SCAN_END|COUNT:18
+ * 输出格式说明（USB-CDC 串口，纯 snprintf 零堆分配）：
+ *
+ *   $BLE|MAC:AA:BB:CC:DD:EE:FF|RSSI:-42|ADDR:1
+ *   $BLE|MAC:...|RSSI:...|ADDR:1|NAME:DevName
+ *   $BLE|MAC:...|RSSI:...|ADDR:0|MANUF:4C0012
+ *   $BLE|MAC:...|RSSI:...|ADDR:1|NAME:D|MANUF:4C|UUID:0000fdaa-...
  *   $SCAN_START|DURATION:5
+ *   $SCAN_END|TOTAL:18|MATCHED:3
  *
  *   ⚠ 关键安全设计：
  *   回调 onResult() 运行在 BTC_TASK 中。在此上下文中绝对不能调用
- *   Serial.print/Serial.printf/Serial.println，因为 UART 驱动内部使用
+ *   Serial.print/Serial.printf/Serial.println 或任何堆分配函数
+ *   （String、JsonDocument、std::string 等），因为 UART 驱动内部使用
  *   互斥锁，与主 loop() 中的 Serial 操作冲突 → 死锁 → 崩溃。
  *
  *   因此回调中仅将格式化后的数据压入 _txQueue（无锁环形队列），
  *   然后让 flushOutput() 在 main loop() 中统一输出到串口。
+ *
+ *   所有格式化使用 snprintf 写入固定 256B 栈 buffer，零堆分配。
  */
 
 class BleScanner {
@@ -47,6 +54,7 @@ public:
     void flushOutput();
 
     void startScan();
+    void requestRestart();
     size_t getLastResultCount() const;
 
     /** 非阻塞扫描完成回调 */
@@ -59,6 +67,7 @@ private:
     uint32_t       _scanDuration;
     uint32_t       _scanStartMs;
     bool           _scanning;
+    volatile bool  _restartPending;  // BTC_TASK 设置此标记，loop() 中择机重启
     size_t         _lastCount;
     volatile size_t _packetCount;   // BTC_TASK 中自增，记录本轮实际收到的广播包总数
     volatile size_t _matchedCount;  // BTC_TASK 中自增，记录匹配白名单的包数
