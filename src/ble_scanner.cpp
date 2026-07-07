@@ -1,23 +1,13 @@
 #include "ble_scanner.h"
 
-// 静态指针，供 scanCompleteCB 使用（静态回调无 this 指针）
-static BleScanner* g_self = nullptr;
-
 // ========== 设备发现回调 ==========
 void BleScanner::AdvertisedDeviceCallbacks::onResult(BLEAdvertisedDevice device) {
     _parent->_outputResult(device);
 }
 
-// ========== 扫描完成回调（静态） ==========
-void BleScanner::scanCompleteCB(BLEScanResults results) {
-    if (g_self) {
-        char buf[48];
-        snprintf(buf, sizeof(buf), "$SCAN_END|COUNT:%d", results.getCount());
-        g_self->_enqueue(buf);
-    }
-}
-
 // ========== BleScanner ==========
+BleScanner* BleScanner::g_self = nullptr;
+
 BleScanner::BleScanner()
     : _config(nullptr)
     , _pBLEScan(nullptr)
@@ -25,6 +15,7 @@ BleScanner::BleScanner()
     , _scanStartMs(0)
     , _scanning(false)
     , _lastCount(0)
+    , _packetCount(0)
     , _txHead(0)
     , _txTail(0)
 {
@@ -36,14 +27,34 @@ bool BleScanner::begin(ConfigManager* config) {
 
     BLEDevice::init("BLE-Dongle");
     _pBLEScan = BLEDevice::getScan();
-    _pBLEScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks(this));
-    _pBLEScan->setActiveScan(true);   // 主动扫描（可获取设备名）
-    _pBLEScan->setInterval(100);
-    _pBLEScan->setWindow(99);
+
+    // 从配置加载扫描参数（含 setCallbacks 的 wantDuplicates）
+    applyScanParams();
 
     Serial.println("[BLE] Scanner initialized");
     startScan();
     return true;
+}
+
+void BleScanner::applyScanParams() {
+    if (!_pBLEScan || !_config) return;
+
+    BleScanParams p = _config->getScanParams();
+
+    // wantDuplicates=true → 不过滤重复广播；false → 过滤
+    // scanDuplicate 配置选项 user 可设置：0=不过滤(显示所有)，1=过滤重复
+    _pBLEScan->setAdvertisedDeviceCallbacks(
+        new AdvertisedDeviceCallbacks(this),
+        !p.scanDuplicate      // wantDuplicates = true 表示不过滤重复
+    );
+
+    _pBLEScan->setActiveScan(p.scanType == 1);
+    _pBLEScan->setInterval(p.scanInterval);
+    _pBLEScan->setWindow(p.scanWindow);
+
+    Serial.printf("[BLE] Scan params: interval=%u window=%u active=%s dupFilter=%s\n",
+                  p.scanInterval, p.scanWindow, p.scanType ? "Y" : "N",
+                  p.scanDuplicate ? "ON" : "OFF");
 }
 
 void BleScanner::setScanDuration(uint32_t seconds) {
@@ -52,30 +63,41 @@ void BleScanner::setScanDuration(uint32_t seconds) {
 
 void BleScanner::startScan() {
     if (_pBLEScan) {
-        // 使用回调版 start：duration 秒后自动停止并调用 scanCompleteCB
-        _pBLEScan->start(_scanDuration, scanCompleteCB, false);
         _scanning = true;
         _scanStartMs = millis();
         _lastCount = 0;
+        _packetCount = 0;
+        _pBLEScan->start(_scanDuration, scanCompleteCB, false); // 非阻塞模式
         char buf[48];
-    snprintf(buf, sizeof(buf), "$SCAN_START|DURATION:%u", _scanDuration);
-    _enqueue(buf);
+        snprintf(buf, sizeof(buf), "$SCAN_START|DURATION:%u", _scanDuration);
+        _enqueue(buf);
     }
 }
 
 void BleScanner::update() {
     if (!_scanning || !_pBLEScan) return;
 
-    // 检查扫描是否完成
-    if (millis() - _scanStartMs < (_scanDuration * 1000UL)) {
-        return;
-    }
+    // 非阻塞扫描：start() 已启动扫描，等待 scanCompleteCB 回调
+    // update() 只需要处理环形队列输出
+}
 
-    // 扫描已自动结束
-    _scanning = false;
-    _lastCount = _pBLEScan->getResults().getCount();
-    _pBLEScan->clearResults();
-    startScan();
+void BleScanner::scanCompleteCB(BLEScanResults results) {
+    BleScanner* self = g_self;
+    if (!self) return;
+
+    self->_scanning = false;
+    // 使用自增的 _packetCount（实际接收到的广播包数），而非 results.getCount()
+    //（results.getCount() 在非阻塞 + wantDuplicates 模式下只统计唯一设备地址，不准确）
+    self->_lastCount = self->_packetCount;
+
+    char buf[48];
+    snprintf(buf, sizeof(buf), "$SCAN_END|COUNT:%d", self->_lastCount);
+    self->_enqueue(buf);
+
+    self->_pBLEScan->clearResults();
+
+    // 立即开始下一轮（间隔仅微秒级）
+    self->startScan();
 }
 
 // ========== 环形队列 ==========
@@ -110,13 +132,13 @@ bool BleScanner::_matchWhitelist(BLEAdvertisedDevice& device) const {
     devMac.toUpperCase();
     std::string devName = device.haveName() ? device.getName().c_str() : "";
 
-    // 厂商数据（只取前 2 字节作为 Company ID）
+    // 厂商数据（取前 2 字节，小端序 → Company ID）
     uint16_t devCompanyId = 0;
     if (device.haveManufacturerData()) {
-        String manufStr = device.getManufacturerData().c_str();
-        size_t mLen = manufStr.length();
-        if (mLen >= 2) {
-            devCompanyId = (uint8_t)manufStr[0] | ((uint8_t)manufStr[1] << 8);
+        std::string manufRaw = device.getManufacturerData();
+        if (manufRaw.length() >= 2) {
+            // BLE 规范中 Company ID 以小端序（LE）传输
+            devCompanyId = (uint8_t)manufRaw[0] | ((uint8_t)manufRaw[1] << 8);
         }
     }
 
@@ -148,6 +170,10 @@ bool BleScanner::_matchWhitelist(BLEAdvertisedDevice& device) const {
  * 格式化后通过 _enqueue 压入环形队列，由主 loop 的 flushOutput() 统一输出。
  */
 void BleScanner::_outputResult(BLEAdvertisedDevice& device) {
+    // 自增计数器：记录本轮实际收到的广播包数
+    // 必须在 _matchWhitelist 之前递增，因为 COUNT 统计的是扫描到的所有包
+    _packetCount++;
+
     if (!_matchWhitelist(device)) return;
 
     char buf[TX_LINE_MAX];

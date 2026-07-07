@@ -32,7 +32,13 @@ bool ConfigManager::_load() {
 
     String json = file.readString();
     file.close();
-    return whitelistFromJson(json);
+
+    bool ok = whitelistFromJson(json);
+    if (ok) {
+        Serial.printf("[Config] Loaded: scanDuplicate=%d whitelist=%zu\n",
+                      _scanParams.scanDuplicate, _whitelist.size());
+    }
+    return ok;
 }
 
 bool ConfigManager::_save() {
@@ -43,8 +49,9 @@ bool ConfigManager::_save() {
         return false;
     }
     file.print(json);
+    file.flush();   // 确保写入完成
     file.close();
-    Serial.println("[Config] Config saved");
+    Serial.printf("[Config] Config saved (scanDuplicate=%d)\n", _scanParams.scanDuplicate);
     return true;
 }
 
@@ -86,6 +93,15 @@ String ConfigManager::whitelistToJson() const {
     }
     doc["wifiMode"] = _wifiMode;
 
+    // BLE 扫描参数
+    JsonObject sp = doc["scanParams"].to<JsonObject>();
+    sp["scanInterval"]     = _scanParams.scanInterval;
+    sp["scanWindow"]       = _scanParams.scanWindow;
+    sp["scanType"]         = _scanParams.scanType;
+    sp["scanDuplicate"]    = _scanParams.scanDuplicate;
+    sp["ownAddrType"]      = _scanParams.ownAddrType;
+    sp["scanFilterPolicy"] = _scanParams.scanFilterPolicy;
+
     String out;
     serializeJson(doc, out);
     return out;
@@ -116,7 +132,31 @@ bool ConfigManager::whitelistFromJson(const String& json) {
         _wifiMode = doc["wifiMode"].as<bool>();
     }
 
+    // BLE 扫描参数
+    JsonObject sp = doc["scanParams"];
+    if (!sp.isNull()) {
+        _scanParams.scanInterval     = sp["scanInterval"]   | 100;
+        _scanParams.scanWindow       = sp["scanWindow"]     | 99;
+        _scanParams.scanType         = sp["scanType"]       | 1;
+        _scanParams.scanDuplicate    = sp["scanDuplicate"]  | false;
+        _scanParams.ownAddrType      = sp["ownAddrType"]    | 0;
+        _scanParams.scanFilterPolicy = sp["scanFilterPolicy"] | 0;
+    }
+
     return true;
+}
+
+BleScanParams ConfigManager::getScanParams() const {
+    return _scanParams;
+}
+
+void ConfigManager::setScanParams(const BleScanParams& params) {
+    _scanParams = params;
+    _save();
+}
+
+bool ConfigManager::save() {
+    return _save();
 }
 
 bool ConfigManager::isWifiMode() const {

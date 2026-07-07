@@ -1,72 +1,7 @@
 #include "wifi_config.h"
 #include <WiFi.h>
 #include <ArduinoJson.h>
-
-// =============== HTML 页面（内嵌，极简版） ===============
-static const char INDEX_HTML[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BLE配置</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:sans-serif;background:#f0f2f5;color:#333;padding:16px;max-width:600px;margin:0 auto}
-h1{text-align:center;color:#1a73e8;font-size:20px;margin:12px 0}
-.card{background:#fff;border-radius:10px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.1)}
-.card h2{font-size:16px;margin-bottom:10px;color:#555}
-.l{font-size:13px;color:#666;display:block;margin:6px 0 3px}
-select,input[type=text]{width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px;margin-bottom:6px}
-.flex{display:flex;gap:8px;flex-wrap:wrap}
-.flex>div{flex:1;min-width:100px}
-.btn{padding:8px 16px;border:none;border-radius:6px;font-size:13px;cursor:pointer;color:#fff;display:inline-block;margin:4px 2px}
-.btn1{background:#1a73e8}
-.btn2{background:#34a853}
-.btn3{background:#ea4335}
-.btn4{background:#666}
-table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
-th,td{padding:8px;text-align:left;border-bottom:1px solid #eee}
-th{color:#888;font-weight:600}
-.tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:11px;color:#fff}
-.t0{background:#1a73e8}
-.t1{background:#34a853}
-.t2{background:#fbbc04;color:#333}
-.st{display:flex;justify-content:space-between;background:#e8f0fe;padding:8px 12px;border-radius:6px;font-size:13px;margin-bottom:10px}
-.st .v{color:#1a73e8;font-weight:600}
-</style></head><body>
-<h1>BLE Dongle</h1>
-<div class="st"><span>规则数</span><span class="v" id="c">0</span></div>
-<div class="card">
-<h2>添加规则</h2>
-<div class="flex"><div><label class="l">类型</label>
-<select id="t"><option value="0">MAC</option><option value="1">名称</option><option value="2">厂商ID</option></select></div>
-<div style="flex:2"><label class="l">值</label><input type="text" id="v" placeholder="AA:BB:CC:DD:EE:FF"></div></div>
-<div id="cidg" style="display:none"><label class="l">制造商ID(十进制)</label><input type="text" id="cid" placeholder="65535"></div>
-<button class="btn btn1" onclick="add()">添加</button></div>
-<div class="card">
-<h2>白名单</h2>
-<table><thead><tr><th>类型</th><th>值</th><th>操作</th></tr></thead><tbody id="tb"></tbody></table>
-<div style="margin-top:8px">
-<button class="btn btn2" onclick="save()">保存</button>
-<button class="btn btn3" onclick="clr()">清空</button>
-<button class="btn btn4" onclick="reb()">重启</button></div></div>
-<script>
-var d=[];
-function ld(){fetch('/api/config').then(r=>r.json()).then(x=>{d=x.whitelist||[];r()})}
-function r(){var h='',tl=['MAC','名称','厂商'];document.getElementById('c').textContent=d.length;
-if(!d.length)h='<tr><td colspan="3" style="text-align:center;color:#999">空</td></tr>';
-else d.forEach(function(e,i){var v=e.type===2?'0x'+e.companyId.toString(16).toUpperCase():e.value;
-h+='<tr><td><span class="tag t'+e.type+'">'+(tl[e.type]||'')+'</span></td><td>'+v+'</td><td><button class="btn btn3" onclick="del('+i+')" style="padding:4px 10px;font-size:11px">删除</button></td></tr>'});
-document.getElementById('tb').innerHTML=h}
-function add(){var tp=parseInt(document.getElementById('t').value),vl=document.getElementById('v').value.trim(),ci=parseInt(document.getElementById('cid').value)||0;
-if(!vl&&tp!==2){alert('请输入值');return}
-d.push({type:tp,value:vl,companyId:ci,enabled:true});r();document.getElementById('v').value=''}
-function del(i){d.splice(i,1);r()}
-function save(){fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({whitelist:d})}).then(r=>r.json()).then(function(x){alert(x.message||'OK');ld()})}
-function clr(){if(!confirm('清空所有规则?'))return;fetch('/api/config',{method:'DELETE'}).then(r=>r.json()).then(function(x){alert(x.message||'OK');ld()})}
-function reb(){if(!confirm('重启设备?'))return;fetch('/api/reboot',{method:'POST'}).then(function(){alert('重启中...')})}
-document.getElementById('t').onchange=function(){document.getElementById('cidg').style.display=this.value==='2'?'block':'none'};
-ld();
-</script></body></html>
-)rawliteral";
+#include "webpage.h"   // 独立 HTML 页面（编译期由 embed_html.py 生成）
 
 // =============== WifiConfigServer ===============
 WifiConfigServer::WifiConfigServer() : _config(nullptr), _server(nullptr) {}
@@ -107,6 +42,8 @@ void WifiConfigServer::_setupRoutes() {
     _server->on("/api/config",         HTTP_DELETE, [this](){ _handleClearAll(); });
     _server->on("/api/entry",          HTTP_POST, [this](){ _handleAddEntry(); });
     _server->on("/api/entry",          HTTP_DELETE, [this](){ _handleDeleteEntry(); });
+    _server->on("/api/scanparams",     HTTP_GET,  [this](){ _handleGetScanParams(); });
+    _server->on("/api/scanparams",     HTTP_POST, [this](){ _handleSaveScanParams(); });
     _server->on("/api/reboot",         HTTP_POST, [this](){ _handleReboot(); });
     _server->onNotFound([this](){ _handleNotFound(); });
 }
@@ -123,7 +60,9 @@ void WifiConfigServer::_handleGetConfig() {
 void WifiConfigServer::_handleSaveConfig() {
     String body = _server->arg("plain");
     if (_config->whitelistFromJson(body)) {
-        _config->setWhitelist(_config->getWhitelist()); // 触发保存
+        // whitelistFromJson 只更新 whitelist，不会修改 scanParams
+        // 直接手动保存完整配置（含当前内存中的 scanParams）
+        _config->save();  // 显式保存完整状态
         _server->send(200, "application/json", "{\"message\":\"保存成功\",\"status\":\"ok\"}");
         Serial.println("[WiFi] Config saved via web");
     } else {
@@ -168,6 +107,49 @@ void WifiConfigServer::_handleDeleteEntry() {
 void WifiConfigServer::_handleClearAll() {
     _config->clearWhitelist();
     _server->send(200, "application/json", "{\"message\":\"已清空所有规则\",\"status\":\"ok\"}");
+}
+
+void WifiConfigServer::_handleGetScanParams() {
+    if (!_config) {
+        _server->send(500, "application/json", "{\"status\":\"error\",\"message\":\"config not available\"}");
+        return;
+    }
+    BleScanParams p = _config->getScanParams();
+    JsonDocument doc;
+    doc["scanInterval"]     = p.scanInterval;
+    doc["scanWindow"]       = p.scanWindow;
+    doc["scanType"]         = p.scanType;
+    doc["scanDuplicate"]    = p.scanDuplicate;
+    doc["ownAddrType"]      = p.ownAddrType;
+    doc["scanFilterPolicy"] = p.scanFilterPolicy;
+    String out;
+    serializeJson(doc, out);
+    _server->send(200, "application/json; charset=utf-8", out);
+}
+
+void WifiConfigServer::_handleSaveScanParams() {
+    if (!_config) {
+        _server->send(500, "application/json", "{\"status\":\"error\",\"message\":\"config not available\"}");
+        return;
+    }
+    String body = _server->arg("plain");
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, body);
+    if (err) {
+        _server->send(400, "application/json",
+            "{\"message\":\"JSON 解析失败\",\"status\":\"error\"}");
+        return;
+    }
+    BleScanParams p;
+    p.scanInterval     = doc["scanInterval"]   | 100;
+    p.scanWindow       = doc["scanWindow"]     | 99;
+    p.scanType         = doc["scanType"]       | 1;
+    p.scanDuplicate    = doc["scanDuplicate"]  | false;
+    p.ownAddrType      = doc["ownAddrType"]    | 0;
+    p.scanFilterPolicy = doc["scanFilterPolicy"] | 0;
+    _config->setScanParams(p);
+    _server->send(200, "application/json", "{\"message\":\"扫描参数已保存\",\"status\":\"ok\"}");
+    Serial.println("[WiFi] Scan params saved via web");
 }
 
 void WifiConfigServer::_handleReboot() {

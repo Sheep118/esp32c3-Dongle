@@ -57,6 +57,12 @@ private:
     /** 清除所有条目 */
     void _handleClearAll();
 
+    /** 获取 BLE 扫描参数 */
+    void _handleGetScanParams();
+
+    /** 保存 BLE 扫描参数 */
+    void _handleSaveScanParams();
+
     /** 重启设备 */
     void _handleReboot();
 

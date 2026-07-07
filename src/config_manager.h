@@ -23,8 +23,20 @@ struct WhitelistEntry {
 };
 
 /**
+ * BLE 扫描参数配置
+ */
+struct BleScanParams {
+    uint16_t scanInterval = 100;     // 扫描间隔 (0x0004 ~ 0x4000, 单位 0.625ms)
+    uint16_t scanWindow   = 99;      // 扫描窗口 (≤ scanInterval, 单位 0.625ms)
+    uint8_t  scanType     = 1;       // 0=被动扫描, 1=主动扫描
+    bool     scanDuplicate = false;  // true=过滤重复广播, false=不过滤
+    uint8_t  ownAddrType  = 0;       // 0=公共地址, 1=随机地址
+    uint8_t  scanFilterPolicy = 0;   // 0=接受所有, 1=只接受白名单中的
+};
+
+/**
  * 配置管理器
- * - 使用 LittleFS 存储白名单 JSON
+ * - 使用 LittleFS 存储白名单 + BLE 扫描参数 JSON
  * - 提供读写接口，WiFi 配置页和 BLE 扫描器共用
  */
 class ConfigManager {
@@ -59,8 +71,18 @@ public:
     /** 设置模式 */
     void setWifiMode(bool wifiMode);
 
+    /** 获取 BLE 扫描参数 */
+    BleScanParams getScanParams() const;
+
+    /** 设置 BLE 扫描参数（立即保存） */
+    void setScanParams(const BleScanParams& params);
+
+    /** 将当前内存状态保存到 LittleFS */
+    bool save();
+
 private:
     std::vector<WhitelistEntry> _whitelist;
+    BleScanParams _scanParams;
     bool _wifiMode = false;
 
     bool _save();

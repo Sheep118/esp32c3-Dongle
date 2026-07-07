@@ -33,6 +33,11 @@ public:
     BleScanner();
 
     bool begin(ConfigManager* config);
+
+    /** 应用配置中的 BLE 扫描参数（扫描间隔/窗口/类型等） */
+    void applyScanParams();
+
+    /** 设置扫描持续时间（秒），默认 5 秒一个周期 */
     void setScanDuration(uint32_t seconds);
 
     /** 驱动 BLE 扫描周期状态机 */
@@ -44,13 +49,18 @@ public:
     void startScan();
     size_t getLastResultCount() const;
 
+    /** 非阻塞扫描完成回调 */
+    static void scanCompleteCB(BLEScanResults results);
+
 private:
+    static BleScanner* g_self;
     ConfigManager* _config;
     BLEScan*       _pBLEScan;
     uint32_t       _scanDuration;
     uint32_t       _scanStartMs;
     bool           _scanning;
     size_t         _lastCount;
+    volatile size_t _packetCount;  // BTC_TASK 中自增，记录本轮实际收到的广播包数
 
     // ---- 无锁环形队列 ----
     char  _txQueue[TX_QUEUE_SIZE][TX_LINE_MAX];
@@ -70,8 +80,6 @@ private:
     private:
         BleScanner* _parent;
     };
-
-    static void scanCompleteCB(BLEScanResults results);
 };
 
 #endif // BLE_SCANNER_H
