@@ -32,6 +32,7 @@ struct BleScanParams {
     bool     scanDuplicate = false;  // true=过滤重复广播, false=不过滤
     uint8_t  ownAddrType  = 0;       // 0=公共地址, 1=随机地址
     uint8_t  scanFilterPolicy = 0;   // 0=接受所有, 1=只接受白名单中的
+    bool     extScanEnabled = false; // true=启用扩展广播扫描, false=仅经典扫描
 };
 
 /**

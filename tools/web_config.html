@@ -70,6 +70,14 @@ tr:hover{background:#f8f9fa}
         <option value="1">过滤重复</option>
       </select>
     </div>
+    <div class="form-group" style="min-width:100px">
+      <label>扩展广播</label>
+      <select id="extScan">
+        <option value="0" selected>关闭</option>
+        <option value="1">开启</option>
+      </select>
+      <div class="hint">BLE 5.0 扩展广播（数据量更大）</div>
+    </div>
   </div>
   </div>
 </div>
@@ -128,6 +136,7 @@ function loadConfig() {
     document.getElementById('scanWindow').value = sp.scanWindow || 99;
     document.getElementById('scanType').value = sp.scanType || 1;
     document.getElementById('scanDuplicate').value = sp.scanDuplicate ? 1 : 0;
+    document.getElementById('extScan').value = sp.extScanEnabled ? 1 : 0;
   });
 }
 
@@ -187,6 +196,7 @@ function saveAll() {
     scanWindow: parseInt(document.getElementById('scanWindow').value) || 99,
     scanType: parseInt(document.getElementById('scanType').value) || 1,
     scanDuplicate: document.getElementById('scanDuplicate').value === '1',
+    extScanEnabled: document.getElementById('extScan').value === '1',
     ownAddrType: 0,
     scanFilterPolicy: 0
   };

@@ -101,6 +101,7 @@ String ConfigManager::whitelistToJson() const {
     sp["scanDuplicate"]    = _scanParams.scanDuplicate;
     sp["ownAddrType"]      = _scanParams.ownAddrType;
     sp["scanFilterPolicy"] = _scanParams.scanFilterPolicy;
+    sp["extScanEnabled"]    = _scanParams.extScanEnabled;
 
     String out;
     serializeJson(doc, out);
@@ -141,6 +142,7 @@ bool ConfigManager::whitelistFromJson(const String& json) {
         _scanParams.scanDuplicate    = sp["scanDuplicate"]  | false;
         _scanParams.ownAddrType      = sp["ownAddrType"]    | 0;
         _scanParams.scanFilterPolicy = sp["scanFilterPolicy"] | 0;
+        _scanParams.extScanEnabled    = sp["extScanEnabled"]    | false;
     }
 
     return true;
