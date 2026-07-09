@@ -1,4 +1,6 @@
 #include "ble_advertiser.h"
+#include <esp_gap_ble_api.h>
+#include <esp_bt_main.h>
 
 // =============== BleAdvertiser ===============
 
@@ -22,7 +24,7 @@ bool BleAdvertiser::begin(ConfigManager* config) {
     // 从配置中读取广播参数
     const BleAdvConfig& cfg = _config->getAdvConfig();
 
-    // 1. 如果配置了自定义 MAC，在 BLEDevice::init 之前设置
+    // 1. 设置 MAC — 必须在 BLEDevice::init 之前（public地址）
     if (cfg.customMac.length() > 0) {
         _applyCustomMac(cfg.customMac);
     }
@@ -30,7 +32,6 @@ bool BleAdvertiser::begin(ConfigManager* config) {
     // 2. 初始化 BLE 设备
     BLEDevice::init("BLE-Dongle-Adv");
     {
-        // 转换 dBm 到 esp_power_level_t 枚举
         esp_power_level_t pwr;
         switch (cfg.txPower) {
             case -12: pwr = ESP_PWR_LVL_N12; break;
@@ -46,8 +47,23 @@ bool BleAdvertiser::begin(ConfigManager* config) {
         BLEDevice::setPower(pwr);
     }
 
-    // 3. 创建 BLE 服务器（广播不需要 server，但某些场景需要）
-    _pServer = BLEDevice::createServer();
+    // 如果 MAC 不是 public (bit 47-46 ≠ 00)，需要设置 own_addr_type 为 RANDOM
+    if (cfg.customMac.length() > 0) {
+        uint8_t top2 = (cfg.customMac.charAt(cfg.customMac.length()-2) >= 'A' ?
+                        (cfg.customMac.charAt(cfg.customMac.length()-2)-'A'+10) :
+                        (cfg.customMac.charAt(cfg.customMac.length()-2)-'0')) << 4;
+        top2 |= (cfg.customMac.charAt(cfg.customMac.length()-1) >= 'A' ?
+                 (cfg.customMac.charAt(cfg.customMac.length()-1)-'A'+10) :
+                 (cfg.customMac.charAt(cfg.customMac.length()-1)-'0'));
+        if ((top2 & 0xC0) != 0) {
+            // Random 地址：设 own_addr_type
+            esp_ble_gap_config_local_privacy(true);
+            Serial.println("[Adv] own_addr_type set to RANDOM");
+        }
+    }
+
+    // 3. 不创建 BLEServer — 避免自动塞 Complete Name / TX Power
+    _pServer = nullptr;
 
     // 4. 获取广播对象
     _pAdvertising = BLEDevice::getAdvertising();
@@ -82,11 +98,35 @@ void BleAdvertiser::applyConfig() {
     if (cfg.advDataHex.length() > 0) {
         _setAdvDataFromHex(advData, cfg.advDataHex, false);
     } else {
-        // 默认：只设置设备名称
-        advData.setName("BLE-Dongle-Adv");
+        // 手动构造 Complete Name AD Structure，避免 setName() 自动附加 TX Power 等
+        const char* defName = "BLE-Dongle-Adv";
+        size_t nameLen = strlen(defName);
+        // AD Structure = Length(1) + Type(1) + Data
+        uint8_t buf[2 + nameLen];
+        buf[0] = nameLen + 1;   // Length
+        buf[1] = 0x09;          // Complete Local Name
+        memcpy(buf + 2, defName, nameLen);
+        advData.addData(std::string((char*)buf, 2 + nameLen));
     }
 
     _pAdvertising->setAdvertisementData(advData);
+
+    // 强行清零 include_name / include_txpower
+    // BLEAdvertising 构造函数默认 include_name=true, include_txpower=true
+    // 即使我们调了 setAdvertisementData()（走 raw 路径），底层可能仍读这些标志
+    // 通过间接调用 esp_ble_gap_config_adv_data 清零它们
+    {
+        esp_ble_adv_data_t zeroData = {};
+        zeroData.set_scan_rsp = false;
+        zeroData.include_name = false;
+        zeroData.include_txpower = false;
+        zeroData.appearance = 0;
+        zeroData.flag = 0;
+        zeroData.min_interval = 0x20;
+        zeroData.max_interval = 0x40;
+        // 不设 manufacturer / service_data / service_uuid
+        ::esp_ble_gap_config_adv_data(&zeroData);
+    }
 
     // --- 设置扫描响应数据 ---
     if (cfg.scanRespHex.length() > 0) {
@@ -154,7 +194,6 @@ void BleAdvertiser::update() {
 // =============== 辅助方法 ===============
 
 bool BleAdvertiser::_applyCustomMac(const String& macStr) {
-    // MAC 格式: "AA:BB:CC:DD:EE:FF"
     uint8_t mac[6];
     int parsed = sscanf(macStr.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
                         &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]);
@@ -162,15 +201,28 @@ bool BleAdvertiser::_applyCustomMac(const String& macStr) {
         Serial.printf("[Adv] Invalid MAC format: %s\n", macStr.c_str());
         return false;
     }
-
-    // ESP32 自定义 MAC 需在 BLEDevice::init 前设置
-    // 使用 esp_base_mac_addr_set
-    esp_err_t ret = esp_base_mac_addr_set(mac);
-    if (ret != ESP_OK) {
-        Serial.printf("[Adv] Failed to set custom MAC: %d\n", ret);
-        return false;
+    // 最高字节最后 2 位 (bit1-bit0): 00=public, 10/01/11=random
+    bool isPublic = ((mac[5] & 0xC0) == 0);
+    if (isPublic) {
+        // 校验单播 (bit0=0)
+        if (mac[0] & 0x01) {
+            Serial.printf("[Adv] MAC %s bit0=1 (multicast), rejected. Set first byte to even value.\n", macStr.c_str());
+            return false;
+        }
+        esp_err_t ret = esp_base_mac_addr_set(mac);
+        if (ret != ESP_OK) {
+            Serial.printf("[Adv] Failed set public MAC: %d (ESP_ERR=0x%X). Is bit0=0?\n", ret, ret);
+            return false;
+        }
+        Serial.printf("[Adv] Public MAC set: %s\n", macStr.c_str());
+    } else {
+        esp_err_t ret = esp_ble_gap_set_rand_addr(mac);
+        if (ret != ESP_OK) {
+            Serial.printf("[Adv] Failed set random addr: %d\n", ret);
+            return false;
+        }
+        Serial.printf("[Adv] Random MAC set: %s\n", macStr.c_str());
     }
-    Serial.printf("[Adv] Custom MAC set: %s\n", macStr.c_str());
     return true;
 }
 

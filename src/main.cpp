@@ -55,7 +55,7 @@ void loopBleScanMode();
 void loopBleAdvMode();
 void loopWifiConfigMode();
 void onButtonEvent(ButtonEvent evt);
-
+#if 0
 // ==================== 初始化 ====================
 void setup() {
     Serial.begin(115200);
@@ -226,4 +226,36 @@ void onButtonEvent(ButtonEvent evt) {
         }
         break;
     }
+}
+
+#endif
+#include "raw_ble_advertiser.h"
+
+RawBleAdvertiser advertiser;
+
+
+void setup() {
+    Serial.begin(115200);
+    for (int i = 0; i < 10; i++) {
+        if (Serial) break;
+        delay(50);
+    }
+    Serial.println("\n\n==========================================");
+    Serial.println("  BLE Dongle v2.0 — ESP32-C3");
+    Serial.println("==========================================");
+
+    advertiser.begin("BLE-Dongle-Adv");
+    advertiser.setAdvertisementType(ADV_TYPE_IND);
+    advertiser.setAdvertisementIntervals(0x20, 0x40);
+
+    advertiser.setAdvertisementDataHex("02010606097368656570");
+    advertiser.setScanResponseDataHex("03FF1122");
+    advertiser.setScanResponseEnabled(true);
+    advertiser.startAdvertising();
+}
+
+void loop(){
+    advertiser.update();
+    Serial.println("adversting....");
+    delay(1000);
 }

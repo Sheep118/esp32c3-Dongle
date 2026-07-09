@@ -40,7 +40,7 @@ th,td{padding:10px 8px;text-align:left;border-bottom:1px solid #eee}
 th{color:#888;font-weight:600;font-size:13px}
 tr:hover{background:#f8f9fa}
 .empty{color:#aaa;text-align:center;padding:24px;font-size:14px}
-.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;font-weight:500}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;color:#fff;background:#555}
 .t0{background:#1a73e8}
 .t1{background:#34a853}
 .t2{background:#f9ab00;color:#333}
@@ -50,6 +50,9 @@ tr:hover{background:#f8f9fa}
 .tab:hover:not(.act){background:#ddd}
 .panel{display:none}
 .panel.act{display:block}
+.bar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f0fdf0;border-radius:8px;margin-bottom:8px;font-size:12px;color:#2a7d2a}
+.bar.warn{background:#fff8e1;color:#996b00}
+.bar.err{background:#ffeaea;color:#b30000}
 </style>
 </head>
 <body>
@@ -98,19 +101,73 @@ tr:hover{background:#f8f9fa}
 <div class="card">
   <h2>📢 广播参数</h2>
   <div class="form-row">
-    <div class="form-group"><label>自定义 MAC</label><input type="text" id="am" placeholder="留空=默认 MAC"><div class="hint">格式 AA:BB:CC:DD:EE:FF</div></div>
+    <div class="form-group"><label>自定义 MAC</label><input type="text" id="am" placeholder="留空=默认 MAC"><div class="hint">格式 6 对 HEX。第一个字节 bit0 必须=0（单播）。最后一个字节 bit7-6 必须=0（Public）；非 0 也可，会启用随机地址</div></div>
     <div class="form-group"><label>广播类型</label><select id="at"><option value="0">ADV_IND（可连接）</option><option value="2">ADV_SCAN_IND</option><option value="3">ADV_NONCONN_IND</option></select></div>
   </div>
   <div class="form-row">
-    <div class="form-group"><label>广播间隔 (0.625ms)</label><input type="number" id="ai" value="100" min="20" max="4000"><div class="hint">范围 20~4000，默认 100 (≈62.5ms)，即 12.5ms~2.5s</div></div>
+    <div class="form-group"><label>广播间隔 (0.625ms)</label><input type="number" id="ai" value="100" min="20" max="4000"><div class="hint">范围 20~4000，即 12.5ms~2.5s</div></div>
     <div class="form-group"><label>发射功率</label><select id="ap"><option value="-12">-12 dBm</option><option value="-9">-9 dBm</option><option value="-6">-6 dBm</option><option value="-3">-3 dBm</option><option value="0" selected>0 dBm</option><option value="3">3 dBm</option><option value="6">6 dBm</option><option value="9">9 dBm</option></select></div>
   </div>
-  <div class="form-row">
-    <div class="form-group"><label>广播时长（秒）</label><input type="number" id="ad" value="0" min="0" max="3600"><div class="hint">0=持续广播</div></div>
+  <div class="form-row"><div class="form-group"><label>广播时长（秒）</label><input type="number" id="ad" value="0" min="0" max="3600"><div class="hint">0=持续广播</div></div></div>
+</div>
 
+<div class="card">
+  <h2>📦 广播数据包构建</h2>
+  <p style="font-size:12px;color:#666;margin-bottom:10px">每条 AD Structure = 类型 + 数据，自动拼成 HEX。<b>总长度 ≤ 31 字节</b>。</p>
+  <div class="bar" id="lenBar">📏 当前总长度：<b>0</b> / 31 字节</div>
+
+  <!-- Tab：可视化 vs 原始 -->
+  <div class="tab-bar" id="advTabBar" style="margin:12px 0 4px">
+    <div class="tab act" data-atab="0" onclick="switchAdvTab(0)">🧩 可视化构建</div>
+    <div class="tab" data-atab="1" onclick="switchAdvTab(1)">📝 原始 HEX</div>
   </div>
-  <div class="form-row"><div class="form-group" style="flex:2"><label>广播数据（HEX）</label><input type="text" id="ah" placeholder="如 02010603034C00"><div class="hint">不填则只广播设备名 BLE-Dongle-Adv</div></div></div>
-  <div class="form-row" id="scanRespRow"><div class="form-group" style="flex:2"><label>扫描响应数据（HEX）</label><input type="text" id="as" placeholder="可选"><div class="hint">扫描时应答包的 HEX 数据。不可连接 / 不可扫描类型下无效</div></div></div>
+
+  <!-- 可视化模式 -->
+  <div id="advVis" class="panel act">
+    <div class="form-row">
+      <div class="form-group" style="flex:1.5"><label>AD Type</label><select id="adt"><option value="01">0x01 Flags</option><option value="03">0x03 16-bit UUID 完整</option><option value="09">0x09 完整名称</option><option value="08">0x08 短名称</option><option value="FF" selected>0xFF 厂商数据</option><option value="0A">0x0A 发射功率</option><option value="16">0x16 Service Data</option><option value="19">0x19 Appearance</option></select></div>
+      <div class="form-group" style="flex:2.5"><label>数据（HEX）</label><input type="text" id="advv" placeholder="Flags 如 06 / 厂商如 4C0001 / 名称用 ASCII 自动转"></div>
+    </div>
+    <div class="form-row" id="nameAsciiRow" style="display:none">
+      <div class="form-group" style="flex:2"><label>名称（ASCII）</label><input type="text" id="advName" placeholder="设备名称"><div class="hint">自动转 HEX</div></div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="addAdStruct()">➕ 添加到数据包</button>
+
+    <!-- 已添加的 AD 结构列表 -->
+    <table style="margin-top:10px"><thead><tr><th>AD Type</th><th>HEX</th><th>大小</th><th>操作</th></tr></thead>
+      <tbody id="adList"><tr><td colspan="4" class="empty">暂未添加 AD 结构</td></tr></tbody></table>
+  </div>
+
+  <!-- 原始 HEX 模式 -->
+  <div id="advRaw" class="panel">
+    <div class="form-group" style="flex:2"><label>完整 AdvData（HEX）</label><input type="text" id="ahr" placeholder="如 02010603034C00"><div class="hint">切换到原始模式时自动同步可视化数据，也可直接编辑</div></div>
+    <div class="bar" id="rawLenBar" style="display:none">📏 原始 HEX 长度：<b>0</b> / 62 字符 (31 字节)</div>
+  </div>
+</div>
+
+<div class="card" id="scanRespCard">
+  <h2>📋 扫描响应数据</h2>
+  <p style="font-size:12px;color:#666;margin-bottom:10px">同上，<b>总长度 ≤ 31 字节</b></p>
+  <div class="bar" id="srLenBar">📏 当前总长度：<b>0</b> / 31 字节</div>
+  <div class="tab-bar" id="srTabBar" style="margin:12px 0 4px">
+    <div class="tab act" data-stab="0" onclick="switchSrTab(0)">🧩 可视化构建</div>
+    <div class="tab" data-stab="1" onclick="switchSrTab(1)">📝 原始 HEX</div>
+  </div>
+  <div id="srVis" class="panel act">
+    <div class="form-row">
+      <div class="form-group" style="flex:1.5"><label>AD Type</label><select id="srt"><option value="09">0x09 完整名称</option><option value="08">0x08 短名称</option><option value="FF" selected>0xFF 厂商数据</option><option value="0A">0x0A 发射功率</option><option value="16">0x16 Service Data</option></select></div>
+      <div class="form-group" style="flex:2.5"><label>数据（HEX）</label><input type="text" id="srv" placeholder="如 4C0001"></div>
+    </div>
+    <div class="form-row" id="srNameAsciiRow" style="display:none">
+      <div class="form-group" style="flex:2"><label>名称（ASCII）</label><input type="text" id="srName" placeholder="设备名称"></div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="addSrStruct()">➕ 添加到扫描响应</button>
+    <table style="margin-top:10px"><thead><tr><th>AD Type</th><th>HEX</th><th>大小</th><th>操作</th></tr></thead>
+      <tbody id="srList"><tr><td colspan="4" class="empty">暂未添加 AD 结构</td></tr></tbody></table>
+  </div>
+  <div id="srRaw" class="panel">
+    <div class="form-group" style="flex:2"><label>完整 ScanRspData（HEX）</label><input type="text" id="asr" placeholder="可选"><div class="hint">切换到原始模式时自动同步可视化数据，也可直接编辑</div></div>
+  </div>
 </div>
 </div>
 
@@ -127,7 +184,172 @@ tr:hover{background:#f8f9fa}
 
 <script>
 var W=[],M=0;
-function switchMode(m){M=m;document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('act')});document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('act')});document.querySelector('.tab[data-mode="'+m+'"]').classList.add('act');document.getElementById('panel'+m).classList.add('act')}
+// 广告数据包：可视化模式
+var AdS=[], SrS=[];
+// 当前模式：0=可视化, 1=原始
+var AdvMode=0, SrMode=0;
+
+function switchMode(m){M=m;document.querySelectorAll('#modeTabs .tab').forEach(function(t){t.classList.remove('act')});['panel0','panel1','panel2'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.remove('act')});document.querySelector('#modeTabs .tab[data-mode="'+m+'"]').classList.add('act');var p=document.getElementById('panel'+m);if(p)p.classList.add('act')}
+
+function switchAdvTab(m){AdvMode=m;document.querySelectorAll('#advTabBar .tab').forEach(function(t,i){t.classList.toggle('act',i===m)});document.getElementById('advVis').style.display=m===0?'block':'none';document.getElementById('advRaw').style.display=m===1?'block':'none';if(m===1)document.getElementById('ahr').value=calcAdvHex()}
+
+function switchSrTab(m){SrMode=m;document.querySelectorAll('#srTabBar .tab').forEach(function(t,i){t.classList.toggle('act',i===m)});document.getElementById('srVis').style.display=m===0?'block':'none';document.getElementById('srRaw').style.display=m===1?'block':'none';if(m===1)document.getElementById('asr').value=calcSrHex()}
+
+// 动态 AD Type 列表
+var AdNames={'01':'Flags','03':'16-bit UUID','09':'完整名称','08':'短名称','FF':'厂商数据','0A':'发射功率','16':'Service Data','19':'Appearance'};
+
+// 将 HEX 字符串解析为 AD 结构数组（按 BLE AD Structure 格式：Length,Type,Data）
+function parseHexToStructs(hex){
+  var h=hex.replace(/[\s:]/g,'').toUpperCase();
+  if(!h||h.length%2!==0) return {ok:false,error:'📏 HEX 长度不是偶数位，无法解析'};
+  var pos=0,list=[];
+  while(pos<h.length){
+    if(pos+4>h.length){return {ok:false,error:'⚠ 断尾数据 @'+pos+': 不足 4 个 HEX 字符'};}
+    var len=parseInt(h.substr(pos,2),16);   // 第一个字节 = AD Structure 的 Length 字段
+    if(len<1){return {ok:false,error:'⚠ AD Structure @'+pos+': Length='+len+' 无效'}}
+    var totalHexChars=2+len*2;  // Length(2) + (Type+Data) * 2
+    if(pos+totalHexChars>h.length){return {ok:false,error:'⚠ AD Structure @'+pos+': 声明 '+len+'B，剩余数据不足'}}
+    var seg=h.substring(pos,pos+totalHexChars);
+    var type=h.substr(pos+2,2);
+    var name=AdNames[type]||'0x'+type;
+    list.push({type:type,name:name,hex:seg,size:len+1});
+    pos+=totalHexChars;
+  }
+  return {ok:true,list:list};
+}
+
+// 计算 HEX 长度（字节数 = HEX字符数/2）
+function hexBytes(h){return h.length/2}
+
+// 更新长度提示条
+function updateLenBars(){
+  var a=calcAdvHex(); var aB=hexBytes(a);
+  var b=document.getElementById('lenBar'); b.innerHTML='📏 当前总长度：<b>'+aB+'</b> / 31 字节';
+  b.className='bar'+(aB>31?' err':aB>27?' warn':'');
+  if(aB>31) b.innerHTML+=' <b style="color:#b30000">⚠ 超限!</b>';
+
+  var s=calcSrHex(); var sB=hexBytes(s);
+  var sb=document.getElementById('srLenBar'); sb.innerHTML='📏 当前总长度：<b>'+sB+'</b> / 31 字节';
+  sb.className='bar'+(sB>31?' err':sB>27?' warn':'');
+  if(sB>31) sb.innerHTML+=' <b style="color:#b30000">⚠ 超限!</b>';
+
+  var r=document.getElementById('ahr').value.trim();
+  if(r){var rb=hexBytes(r);var rlb=document.getElementById('rawLenBar');rlb.style.display='block';rlb.innerHTML='📏 原始 HEX 长度：<b>'+rb+'</b> / 62 字符 (31 字节)';rlb.className='bar'+(rb>31?' err':rb>27?' warn':'');}
+}
+
+// 可视化模式：拼接所有 AD 结构
+function calcAdvHex(){
+  var h='';
+  for(var i=0;i<AdS.length;i++){var s=AdS[i]; h+=s.hex}
+  return h.toUpperCase()
+}
+
+function calcSrHex(){
+  var h='';
+  for(var i=0;i<SrS.length;i++){var s=SrS[i]; h+=s.hex}
+  return h.toUpperCase()
+}
+
+// 获取最终的 AdvData HEX
+function getAdvHex(){
+  if(AdvMode===1) return document.getElementById('ahr').value.replace(/[\s:]/g,'').toUpperCase();
+  return calcAdvHex()
+}
+
+function getSrHex(){
+  if(SrMode===1) return document.getElementById('asr').value.replace(/[\s:]/g,'').toUpperCase();
+  return calcSrHex()
+}
+
+// 添加一条 AD 结构
+function addAdStruct(){
+  var t=document.getElementById('adt').value;
+  var v;
+  if(t==='09'||t==='08'){
+    // 名称类型：可输入 ASCII
+    var nm=document.getElementById('advName').value.trim();
+    if(!nm){alert('请输入名称');return}
+    v=''; for(var i=0;i<nm.length;i++){var c=nm.charCodeAt(i).toString(16); v+=(c.length<2?'0':'')+c}
+  } else {
+    v=document.getElementById('advv').value.replace(/[\s:]/g,'').toUpperCase();
+    if(!v||v.length%2!==0){alert('请输入有效的 HEX 数据（偶数位）');return}
+  }
+  // 构建标准 AD Structure：Length(1B) + Type(1B) + Data
+  var dataLen=v.length/2;      // 数据部分字节数
+  var totalLen=dataLen+1;       // Length = 数据 + 1(Type 字节)
+  var lenHex=(totalLen<16?'0':'')+totalLen.toString(16);
+  var h=lenHex+t+v;
+  var b=h.length/2;
+  if(hexBytes(getAdvHex())+b>31){alert('添加此项后总长度将超过 31 字节！');return}
+  var entry={type:t,name:AdNames[t]||t,hex:h,size:b};
+  AdS.push(entry);
+  renderAdList();
+  updateLenBars();
+  document.getElementById('advv').value='';
+  document.getElementById('advName').value='';
+}
+
+function addSrStruct(){
+  var t=document.getElementById('srt').value;
+  var v;
+  if(t==='09'||t==='08'){
+    var nm=document.getElementById('srName').value.trim();
+    if(!nm){alert('请输入名称');return}
+    v=''; for(var i=0;i<nm.length;i++){var c=nm.charCodeAt(i).toString(16); v+=(c.length<2?'0':'')+c}
+  } else {
+    v=document.getElementById('srv').value.replace(/[\s:]/g,'').toUpperCase();
+    if(!v||v.length%2!==0){alert('请输入有效的 HEX 数据（偶数位）');return}
+  }
+  var dataLen=v.length/2;
+  var totalLen=dataLen+1;
+  var lenHex=(totalLen<16?'0':'')+totalLen.toString(16);
+  var h=lenHex+t+v;
+  var b=h.length/2;
+  if(hexBytes(getSrHex())+b>31){alert('添加此项后总长度将超过 31 字节！');return}
+  SrS.push({type:t,name:AdNames[t]||t,hex:h,size:b});
+  renderSrList();
+  updateLenBars();
+  document.getElementById('srv').value='';
+  document.getElementById('srName').value='';
+}
+
+function deleteAdEntry(i){AdS.splice(i,1);renderAdList();updateLenBars()}
+function deleteSrEntry(i){SrS.splice(i,1);renderSrList();updateLenBars()}
+
+function renderAdList(){
+  var tb=document.getElementById('adList');
+  if(!AdS.length){tb.innerHTML='<tr><td colspan="4" class="empty">暂未添加 AD 结构</td></tr>';return}
+  var h='';
+  for(var i=0;i<AdS.length;i++){var e=AdS[i];h+='<tr><td><span class="tag">0x'+e.type+' '+e.name+'</span></td><td><code>'+e.hex+'</code></td><td>'+e.size+'B</td><td><button class="btn btn-danger btn-sm" onclick="deleteAdEntry('+i+')">删除</button></td></tr>'}
+  tb.innerHTML=h;
+}
+
+function renderSrList(){
+  var tb=document.getElementById('srList');
+  if(!SrS.length){tb.innerHTML='<tr><td colspan="4" class="empty">暂未添加 AD 结构</td></tr>';return}
+  var h='';
+  for(var i=0;i<SrS.length;i++){var e=SrS[i];h+='<tr><td><span class="tag">0x'+e.type+' '+e.name+'</span></td><td><code>'+e.hex+'</code></td><td>'+e.size+'B</td><td><button class="btn btn-danger btn-sm" onclick="deleteSrEntry('+i+')">删除</button></td></tr>'}
+  tb.innerHTML=h;
+}
+
+// 校验 MAC 地址
+function validateMac(mac){
+  if(!mac) return null;
+  var m=mac.toUpperCase().trim();
+  if(!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(m)) return 'MAC 格式错误，应为 AA:BB:CC:DD:EE:FF';
+  var parts=m.split(':');
+  // 第一个字节 bit0 = unicast/multicast, bit1 = universal/local
+  var firstByte=parseInt(parts[0],16);
+  if(firstByte&1) return '第一个字节 '+parts[0]+' 的 bit0=1（多播地址），必须是单播地址（bit0=0）';
+  // 最后一个字节 bit7-6 = 00 才是 public 地址
+  var lastByte=parseInt(parts[5],16);
+  if((lastByte&0xC0)!==0) return '最后一个字节 '+parts[5]+' 最高2位不为 00，非 Public 地址。可设如 00,04,08...';
+  return null;
+}
+function validateInterval(v){
+  if(v<20||v>4000) return '广播间隔范围 20~4000 (12.5ms~2.5s)';
+  return null;
+}
 
 function loadConfig(){
   fetch('/api/config').then(function(r){return r.json()}).then(function(d){
@@ -140,14 +362,24 @@ function loadConfig(){
     document.getElementById('sd').value=sp.scanDuplicate?1:0;
     var ap=d.advConfig||{};
     document.getElementById('am').value=ap.customMac||'';
-    document.getElementById('ah').value=ap.advDataHex||'';
-    document.getElementById('as').value=ap.scanRespHex||'';
     document.getElementById('ap').value=ap.txPower||0;
     document.getElementById('ai').value=ap.advInterval||100;
     document.getElementById('ad').value=ap.advDuration||0;
     document.getElementById('at').value=ap.advType||0;
-    // 触发联动
-    document.getElementById('at').dispatchEvent(new Event('change'));
+    // 智能解析加载的 HEX
+    if(ap.advDataHex){
+      var parsed=parseHexToStructs(ap.advDataHex);
+      if(parsed.ok){AdS=parsed.list;renderAdList();updateLenBars()}
+      else{AdS=[];renderAdList();document.getElementById('lenBar').innerHTML=parsed.error;document.getElementById('lenBar').className='bar err'}
+      document.getElementById('ahr').value=ap.advDataHex;
+    }
+    if(ap.scanRespHex){
+      var parsedS=parseHexToStructs(ap.scanRespHex);
+      if(parsedS.ok){SrS=parsedS.list;renderSrList();updateLenBars()}
+      else{SrS=[];renderSrList();document.getElementById('srLenBar').innerHTML=parsedS.error;document.getElementById('srLenBar').className='bar err'}
+      document.getElementById('asr').value=ap.scanRespHex;
+    }
+    // 触发联动（不插入默认 Flag）
   });
 }
 
@@ -172,18 +404,41 @@ function addEntry(){
 function deleteEntry(i){W.splice(i,1);renderTable()}
 
 function saveAll(){
+  // 校验 MAC
+  var mac=document.getElementById('am').value.trim();
+  var macErr=validateMac(mac);
+  if(macErr){alert('❌ MAC 地址错误：\n'+macErr);return}
+  // 校验广播间隔
+  var interval=parseInt(document.getElementById('ai').value)||100;
+  var intErr=validateInterval(interval);
+  if(intErr){alert('❌ 广播间隔错误：\n'+intErr);return}
+  // 校验广播数据长度
+  var ah=getAdvHex(); var aB=hexBytes(ah);
+  if(aB>31){alert('❌ 广播数据长度为 '+aB+' 字节，超过 31 字节限制！\n请删除一些 AD 结构或缩短数据。');return}
+  var as_x=getSrHex(); var aS=hexBytes(as_x);
+  if(aS>31){alert('❌ 扫描响应数据长度为 '+aS+' 字节，超过 31 字节限制！');return}
+
   var sp={scanInterval:parseInt(document.getElementById('si').value)||100,scanWindow:parseInt(document.getElementById('sw').value)||99,scanType:parseInt(document.getElementById('st').value)||1,scanDuplicate:document.getElementById('sd').value==='1',ownAddrType:0,scanFilterPolicy:0};
-  var ap={customMac:document.getElementById('am').value.trim(),advDataHex:document.getElementById('ah').value.trim(),scanRespHex:document.getElementById('as').value.trim(),txPower:parseInt(document.getElementById('ap').value)||0,advInterval:parseInt(document.getElementById('ai').value)||100,advDuration:parseInt(document.getElementById('ad').value)||0,advType:parseInt(document.getElementById('at').value)||0};
+  var ap={customMac:mac,advDataHex:ah,scanRespHex:as_x,txPower:parseInt(document.getElementById('ap').value)||0,advInterval:interval,advDuration:parseInt(document.getElementById('ad').value)||0,advType:parseInt(document.getElementById('at').value)||0};
   var payload={deviceMode:M,whitelist:W,scanParams:sp,advConfig:ap};
   fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json()}).then(function(){alert('✅ 保存成功，重启后生效')}).catch(function(){alert('❌ 保存失败')});
 }
 
 function reboot(){if(!confirm('确定重启设备？'))return;fetch('/api/reboot',{method:'POST'});alert('设备正在重启...')}
 
+// 白名单类型切换
 document.getElementById('ft').addEventListener('change',function(){var s=this.value==='2';document.getElementById('cg').style.display=s?'block':'none';document.getElementById('vg').style.display=s?'none':'block';if(!s)document.getElementById('fv').placeholder=this.value==='0'?'AA:BB:CC:DD:EE:FF':'广播名称'});
 
-// 广播类型切换：不可连接/不可扫描类型禁用扫描响应数据
-document.getElementById('at').addEventListener('change',function(){var t=parseInt(this.value);var disabled=(t===3);document.getElementById('as').disabled=disabled;document.getElementById('as').style.opacity=disabled?'0.4':'1';document.getElementById('scanRespRow').style.opacity=disabled?'0.5':'1'});
+// AD Type 切换：名称类型显示 ASCII 输入框
+document.getElementById('adt').addEventListener('change',function(){var n=this.value==='09'||this.value==='08';document.getElementById('nameAsciiRow').style.display=n?'block':'none';document.getElementById('advv').parentElement.style.display=n?'none':'block'});
+document.getElementById('srt').addEventListener('change',function(){var n=this.value==='09'||this.value==='08';document.getElementById('srNameAsciiRow').style.display=n?'block':'none';document.getElementById('srv').parentElement.style.display=n?'none':'block'});
+
+// 广播类型切换：不可连接/不可扫描类型禁用扫描响应卡片
+document.getElementById('at').addEventListener('change',function(){var t=parseInt(this.value);var d=(t===3);var card=document.getElementById('scanRespCard');card.style.opacity=d?'0.5':'1';card.querySelectorAll('input,select,button').forEach(function(el){el.disabled=d});document.getElementById('srLenBar').style.display=d?'none':'flex'});
+
+// 原始 HEX 输入时更新长度
+document.getElementById('ahr').addEventListener('input',updateLenBars);
+document.getElementById('asr').addEventListener('input',updateLenBars);
 
 window.addEventListener('DOMContentLoaded',loadConfig);
 </script>

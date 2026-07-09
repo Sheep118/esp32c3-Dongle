@@ -2,6 +2,7 @@
 #define BLE_ADVERTISER_H
 
 #include <Arduino.h>
+#include <cstring>
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
