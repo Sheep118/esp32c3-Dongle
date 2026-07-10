@@ -252,17 +252,38 @@ bool RawBleAdvertiser::applyCustomMacFromConfig(const String& macStr) {
 
     bool isPublic = ((mac[5] & 0xC0) == 0);
     if (isPublic) {
-        if (mac[0] & 0x01) {
-            Serial.printf("[RawAdv] MAC %s bit0=1 (multicast), rejected.\n", macStr.c_str());
+        // ESP32 MAC 偏移量表:
+        //   Wi-Fi STA = base_mac + 0
+        //   Wi-Fi AP  = base_mac + 1
+        //   BLE       = base_mac + 2   ← 我们要设 BLE 地址，所以 base_mac = 目标 - 2
+        //   Ethernet  = base_mac + 3
+        uint8_t baseMac[6];
+        memcpy(baseMac, mac, 6);
+        // 减去 2（带进位借位）
+        uint16_t borrow = 2;
+        for (int i = 5; i >= 0 && borrow > 0; i--) {
+            if (baseMac[i] >= borrow) {
+                baseMac[i] -= (uint8_t)borrow;
+                borrow = 0;
+            } else {
+                baseMac[i] -= (uint8_t)borrow;
+                borrow = 1;
+            }
+        }
+
+        if (baseMac[0] & 0x01) {
+            Serial.printf("[RawAdv] MAC %s: base_mac bit0=1 (multicast), rejected.\n", macStr.c_str());
             return false;
         }
 
-        esp_err_t ret = esp_base_mac_addr_set(mac);
+        esp_err_t ret = esp_base_mac_addr_set(baseMac);
         if (ret != ESP_OK) {
-            Serial.printf("[RawAdv] Failed set public MAC: %d\n", ret);
+            Serial.printf("[RawAdv] Failed set base MAC (for BLE MAC %s): %d\n", macStr.c_str(), ret);
             return false;
         }
-        Serial.printf("[RawAdv] Public MAC set: %s\n", macStr.c_str());
+        Serial.printf("[RawAdv] BLE Public MAC set: %s (base_mac: %02X:%02X:%02X:%02X:%02X:%02X)\n",
+                      macStr.c_str(),
+                      baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
     } else {
         esp_err_t ret = esp_ble_gap_set_rand_addr(mac);
         if (ret != ESP_OK) {

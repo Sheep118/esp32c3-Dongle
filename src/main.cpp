@@ -55,7 +55,7 @@ void loopBleScanMode();
 void loopBleAdvMode();
 void loopWifiConfigMode();
 void onButtonEvent(ButtonEvent evt);
-#if 0
+#if 1
 // ==================== 初始化 ====================
 void setup() {
     Serial.begin(115200);
@@ -228,11 +228,10 @@ void onButtonEvent(ButtonEvent evt) {
     }
 }
 
-#endif
+#else
+
 #include "raw_ble_advertiser.h"
-
 RawBleAdvertiser advertiser;
-
 
 void setup() {
     Serial.begin(115200);
@@ -260,3 +259,4 @@ void loop(){
     Serial.println("adversting....");
     delay(1000);
 }
+#endif
