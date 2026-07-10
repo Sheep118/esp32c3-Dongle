@@ -43,11 +43,6 @@ public:
 private:
     static RawBleAdvertiser* s_instance;
 
-    static void onGapEventStatic(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t* param);
-    void onGapEvent(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t* param);
-
-    bool configRawData();
-    bool waitForConfigComplete(uint32_t timeoutMs);
     bool parseHex(const String& hex, std::vector<uint8_t>& out) const;
     bool applyCustomMacFromConfig(const String& macStr);
 
@@ -62,13 +57,9 @@ private:
     bool _initialized = false;
     bool _advertising = false;
     bool _scanResponseEnabled = false;
-    bool _advDataReady = false;
-    bool _scanRspReady = false;
-    bool _pendingStart = false;
 
     uint32_t _startTime = 0;
     uint32_t _durationSeconds = 0;
-    bool _hasDurationOverride = false;
 };
 
 #endif // RAW_BLE_ADVERTISER_H

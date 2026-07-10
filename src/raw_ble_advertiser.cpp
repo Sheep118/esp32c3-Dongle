@@ -16,8 +16,6 @@ bool RawBleAdvertiser::begin(const char* deviceName) {
     _deviceName = deviceName ? deviceName : "";
     BLEDevice::init(_deviceName.c_str());
     s_instance = this;
-    BLEDevice::setCustomGapHandler(&RawBleAdvertiser::onGapEventStatic);
-
     _initialized = true;
     return true;
 }
@@ -115,7 +113,6 @@ void RawBleAdvertiser::setScanResponseEnabled(bool enabled) {
 
 void RawBleAdvertiser::setDuration(uint32_t durationSeconds) {
     _durationSeconds = durationSeconds;
-    _hasDurationOverride = true;
 }
 
 bool RawBleAdvertiser::setAdvertisementData(const uint8_t* data, size_t length) {
@@ -158,38 +155,45 @@ bool RawBleAdvertiser::startAdvertising() {
         return false;
     }
 
-    _advDataReady = false;
-    _scanRspReady = false;
-    _pendingStart = true;
+    // ===== 完全对齐 BLEAdvertising::start() 的 fire-and-forget 方式 =====
+    // 官方库从不等待 ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT
+    // （其 handleGAPEvent 中该事件的信号量已被注释掉）
+    // 正确做法：配置数据后直接启播，由 Bluedroid 内部队列保证顺序
 
-    if (!configRawData()) {
-        _pendingStart = false;
+    // 1. 配置原始广播数据（异步发送到 Bluedroid 任务队列）
+    uint8_t* advPtr = _advertisementData.empty() ? nullptr : const_cast<uint8_t*>(_advertisementData.data());
+    esp_err_t err = esp_ble_gap_config_adv_data_raw(advPtr, _advertisementData.size());
+    if (err != ESP_OK) {
+        Serial.printf("[RawAdv] esp_ble_gap_config_adv_data_raw failed: %d\n", err);
         return false;
     }
 
-    const bool waitScanRsp = _scanResponseEnabled;
-    if (!waitForConfigComplete(waitScanRsp ? 2000 : 1000)) {
-        Serial.println("[RawAdv] Timeout waiting for GAP config completion");
-        _pendingStart = false;
-        return false;
+    // 2. 配置原始扫描响应数据（可选）
+    if (_scanResponseEnabled) {
+        uint8_t* rspPtr = _scanResponseData.empty() ? nullptr : const_cast<uint8_t*>(_scanResponseData.data());
+        err = esp_ble_gap_config_scan_rsp_data_raw(rspPtr, _scanResponseData.size());
+        if (err != ESP_OK) {
+            Serial.printf("[RawAdv] esp_ble_gap_config_scan_rsp_data_raw failed: %d\n", err);
+            return false;
+        }
     }
 
-    esp_err_t err = esp_ble_gap_start_advertising(&_advParams);
+    // 3. 立即启动广播 —— 不等待配置完成事件！
+    //    Bluedroid 内部使用消息队列，start_advertising 会在 config 完成后才被处理
+    err = esp_ble_gap_start_advertising(&_advParams);
     if (err != ESP_OK) {
         Serial.printf("[RawAdv] esp_ble_gap_start_advertising failed: %d\n", err);
-        _pendingStart = false;
         return false;
     }
 
     _advertising = true;
-    _pendingStart = false;
     _startTime = millis();
     Serial.println("[RawAdv] Advertising started");
     return true;
 }
 
 void RawBleAdvertiser::stopAdvertising() {
-    if (!_advertising && !_pendingStart) {
+    if (!_advertising) {
         return;
     }
 
@@ -200,7 +204,6 @@ void RawBleAdvertiser::stopAdvertising() {
     }
 
     _advertising = false;
-    _pendingStart = false;
     Serial.println("[RawAdv] Advertising stopped");
 }
 
@@ -215,39 +218,7 @@ void RawBleAdvertiser::update() {
     }
 }
 
-bool RawBleAdvertiser::configRawData() {
-    _advDataReady = false;
-    _scanRspReady = false;
 
-    uint8_t* advPtr = _advertisementData.empty() ? nullptr : const_cast<uint8_t*>(_advertisementData.data());
-    esp_err_t err = esp_ble_gap_config_adv_data_raw(advPtr, _advertisementData.size());
-    if (err != ESP_OK) {
-        Serial.printf("[RawAdv] esp_ble_gap_config_adv_data_raw failed: %d\n", err);
-        return false;
-    }
-
-    if (_scanResponseEnabled) {
-        uint8_t* rspPtr = _scanResponseData.empty() ? nullptr : const_cast<uint8_t*>(_scanResponseData.data());
-        err = esp_ble_gap_config_scan_rsp_data_raw(rspPtr, _scanResponseData.size());
-        if (err != ESP_OK) {
-            Serial.printf("[RawAdv] esp_ble_gap_config_scan_rsp_data_raw failed: %d\n", err);
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool RawBleAdvertiser::waitForConfigComplete(uint32_t timeoutMs) {
-    const uint32_t start = millis();
-    while (millis() - start < timeoutMs) {
-        if (_advDataReady && (!_scanResponseEnabled || _scanRspReady)) {
-            return true;
-        }
-        delay(1);
-    }
-    return false;
-}
 
 bool RawBleAdvertiser::parseHex(const String& hex, std::vector<uint8_t>& out) const {
     String clean = hex;
@@ -303,30 +274,5 @@ bool RawBleAdvertiser::applyCustomMacFromConfig(const String& macStr) {
         _advParams.own_addr_type = BLE_ADDR_TYPE_RANDOM;
         Serial.printf("[RawAdv] Random MAC set: %s\n", macStr.c_str());
     }
-
     return true;
-}
-
-void RawBleAdvertiser::onGapEventStatic(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t* param) {
-    if (s_instance != nullptr) {
-        s_instance->onGapEvent(event, param);
-    }
-}
-
-void RawBleAdvertiser::onGapEvent(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t* param) {
-    (void)param;
-
-    switch (event) {
-    case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
-        _advDataReady = true;
-        break;
-    case ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT:
-        _scanRspReady = true;
-        break;
-    case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
-        _advertising = false;
-        break;
-    default:
-        break;
-    }
 }

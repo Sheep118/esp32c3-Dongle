@@ -244,7 +244,8 @@ void setup() {
     Serial.println("  BLE Dongle v2.0 — ESP32-C3");
     Serial.println("==========================================");
 
-    advertiser.begin("BLE-Dongle-Adv");
+    advertiser.setCustomMac("18:00:00:00:00:28");
+    advertiser.begin("BLE-Adv");
     advertiser.setAdvertisementType(ADV_TYPE_IND);
     advertiser.setAdvertisementIntervals(0x20, 0x40);
 
