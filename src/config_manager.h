@@ -86,8 +86,8 @@ public:
     void setAdvConfig(const BleAdvConfig& cfg);
 
     // ===== JSON 序列化/反序列化 =====
-    String whitelistToJson() const;
-    bool whitelistFromJson(const String& json);
+    String configToJson() const;
+    bool configFromJson(const String& json);
 
     // ===== 杂项 =====
     bool isWifiMode() const;

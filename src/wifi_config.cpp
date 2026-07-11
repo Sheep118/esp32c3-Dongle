@@ -57,14 +57,14 @@ void WifiConfigServer::_handleRoot() {
 }
 
 void WifiConfigServer::_handleGetConfig() {
-    String json = _config->whitelistToJson();
+    String json = _config->configToJson();
     _server->send(200, "application/json; charset=utf-8", json);
 }
 
 void WifiConfigServer::_handleSaveConfig() {
     String body = _server->arg("plain");
-    if (_config->whitelistFromJson(body)) {
-        // whitelistFromJson 同时解析 whitelist 和 scanParams
+    if (_config->configFromJson(body)) {
+        // configFromJson 从json中更新 _config 的内容，调用 save() 保存到文件
         _config->save();
         // 通知 BLE 扫描器热应用新的扫描参数
         if (_bleScanner) {

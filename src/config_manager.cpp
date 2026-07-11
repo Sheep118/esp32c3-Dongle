@@ -33,7 +33,7 @@ bool ConfigManager::_load() {
     String json = file.readString();
     file.close();
 
-    bool ok = whitelistFromJson(json);
+    bool ok = configFromJson(json);
     if (ok) {
         Serial.printf("[Config] Loaded: scanDuplicate=%d whitelist=%zu\n",
                       _scanParams.scanDuplicate, _whitelist.size());
@@ -42,7 +42,7 @@ bool ConfigManager::_load() {
 }
 
 bool ConfigManager::_save() {
-    String json = whitelistToJson();
+    String json = configToJson();
     File file = LittleFS.open(CONFIG_FILE, "w");
     if (!file) {
         Serial.println("[Config] Failed to open config for writing");
@@ -80,7 +80,7 @@ bool ConfigManager::clearWhitelist() {
     return _save();
 }
 
-String ConfigManager::whitelistToJson() const {
+String ConfigManager::configToJson() const {
     JsonDocument doc;
     doc["deviceMode"] = static_cast<uint8_t>(_deviceMode);
     doc["wifiMode"]   = _wifiMode;
@@ -119,7 +119,7 @@ String ConfigManager::whitelistToJson() const {
     return out;
 }
 
-bool ConfigManager::whitelistFromJson(const String& json) {
+bool ConfigManager::configFromJson(const String& json) {
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, json);
     if (err) {
