@@ -6,6 +6,9 @@
 #include "ble_scanner.h"
 #include "webpage.h"
 
+#define LOG_TAG "WiFi"
+#include "log.h"
+
 // =============== WifiConfigServer ===============
 WifiConfigServer::WifiConfigServer() : _config(nullptr), _server(nullptr), _bleScanner(nullptr) {}
 
@@ -41,14 +44,14 @@ bool WifiConfigServer::begin(ConfigManager* config) {
     // 启动自定义 UDP DNS 响应
     _dnsUdp.begin(53);  // 监听 53 端口
 
-    Serial.printf("[WiFi] AP started: SSID=%s IP=%s\n", WIFI_AP_SSID, apIp.toString().c_str());
-    Serial.println("[WiFi] DHCP DNS set to AP IP, UDP DNS on port 53");
+    LOG_INFO("AP started: SSID=%s IP=%s", WIFI_AP_SSID, apIp.toString().c_str());
+    LOG_INFO("DHCP DNS set to AP IP, UDP DNS on port 53");
 
     // ====== Web 服务器 ======
     _server = new WebServer(80);
     _setupRoutes();
     _server->begin();
-    Serial.println("[WiFi] HTTP server on port 80 | Visit http://any.domain in browser");
+    LOG_INFO("HTTP server on port 80 | Visit http://any.domain in browser");
 
     return true;
 }
@@ -147,7 +150,7 @@ void WifiConfigServer::_setupRoutes() {
 }
 
 void WifiConfigServer::_handleRoot() {
-    Serial.printf("[Web] GET /  (client IP=%s)\n", _server->client().remoteIP().toString().c_str());
+    LOG_INFO("GET /  (client IP=%s)", _server->client().remoteIP().toString().c_str());
     _server->send_P(200, "text/html; charset=utf-8", INDEX_HTML);
 }
 
@@ -166,7 +169,7 @@ void WifiConfigServer::_handleSaveConfig() {
             _bleScanner->applyScanParams();
         }
         _server->send(200, "application/json", "{\"message\":\"保存成功\",\"status\":\"ok\"}");
-        Serial.println("[WiFi] Config saved via web");
+        LOG_INFO("Config saved via web");
     } else {
         _server->send(400, "application/json", "{\"message\":\"JSON 解析失败\",\"status\":\"error\"}");
     }
@@ -244,7 +247,7 @@ void WifiConfigServer::_handleReboot() {
 void WifiConfigServer::_handleCaptivePortal() {
     String uri = _server->uri();
     String host = _server->hostHeader();
-    Serial.printf("[Portal] uri=%s host=%s\n", uri.c_str(), host.c_str());
+    LOG_INFO("Portal: uri=%s host=%s", uri.c_str(), host.c_str());
 
     // iOS / macOS hotspot detect: 返回非 "Success" 触发 Portal
     if (uri == "/hotspot-detect.html" || uri == "/library/test/success.html") {

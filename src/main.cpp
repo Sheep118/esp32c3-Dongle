@@ -21,6 +21,8 @@
  */
 
 #include <Arduino.h>
+#define LOG_TAG "Main"
+#include "log.h"
 #include "led.h"
 #include "button.h"
 #include "config_manager.h"
@@ -63,7 +65,7 @@ void setup() {
         if (Serial) break;
         delay(50);
     }
-    Serial.println("\n\n==========================================");
+    Serial.println("\r\n==========================================");
     Serial.println("  BLE Dongle v2.0 — ESP32-C3");
     Serial.println("==========================================");
 
@@ -73,14 +75,14 @@ void setup() {
 
     // 2. 文件系统 + 配置
     if (!config.begin()) {
-        Serial.println("[Main] FATAL: Config manager init failed!");
+        LOG_ERROR("Config manager init failed!");
     }
 
     // 3. 按键
     btnBoot.onEvent(onButtonEvent);
 
     // 4. 开机检测（2 秒按键窗口）
-    Serial.println("[Main] Hold button within 2s for WiFi Config mode...");
+    LOG_INFO("Hold button within %us for WiFi Config mode...", (BOOT_WINDOW_MS / 1000));
     ledStatus.setMode(LedMode::ON);
 
     const uint32_t BOOT_WINDOW_MS_VAL = BOOT_WINDOW_MS;
@@ -97,7 +99,7 @@ void setup() {
 
     if (buttonWasPressed) {
         // 按键按下 → Wi-Fi 配置模式（不论配置中的 deviceMode）
-        Serial.println("[Main] >>> Button pressed -> Wi-Fi Config Mode");
+        LOG_INFO(">>> Button pressed -> Wi-Fi Config Mode");
         gMode = RunMode::WIFI_CONFIG;
         config.setWifiMode(true);
         setupWifiConfigMode();
@@ -107,34 +109,32 @@ void setup() {
         DeviceMode devMode = config.getDeviceMode();
         switch (devMode) {
         case DeviceMode::ADVERTISER:
-            Serial.println("[Main] >>> Device mode: BLE Advertiser");
+            LOG_INFO(">>> Device mode: BLE Advertiser");
             gMode = RunMode::BLE_ADV;
             setupBleAdvMode();
             break;
         case DeviceMode::UART_TRANS:
-            Serial.println("[Main] >>> Device mode: BLE UART (not yet implemented)");
-            // 当 UART 透传实现后，此处设置 gMode 并调用对应 setup
-            // 回退为扫描模式
+            LOG_INFO(">>> Device mode: BLE UART (not yet implemented)");
             gMode = RunMode::BLE_SCAN;
             setupBleScanMode();
             break;
         case DeviceMode::SCANNER:
         default:
-            Serial.println("[Main] >>> Device mode: BLE Scanner");
+            LOG_INFO(">>> Device mode: BLE Scanner");
             gMode = RunMode::BLE_SCAN;
             setupBleScanMode();
             break;
         }
     }
 
-    Serial.println("[Main] Setup complete");
+    LOG_INFO("Setup complete");
 }
 
 // ==================== BLE 扫描模式 ====================
 void setupBleScanMode() {
     ledStatus.setMode(LedMode::BLINK, LED_SCAN_BLINK_MS);
     if (!bleScanner.begin(&config)) {
-        Serial.println("[Main] FATAL: BLE scanner init failed!");
+        LOG_ERROR("BLE scanner init failed!");
         ledStatus.setMode(LedMode::OFF);
     }
 }
@@ -143,7 +143,7 @@ void setupBleScanMode() {
 void setupBleAdvMode() {
     ledStatus.setMode(LedMode::DOUBLE_BLINK, LED_ADV_DB_FLASH_MS, LED_ADV_DB_GAP_MS);
     if (!bleAdvertiser.begin(&config)) {
-        Serial.println("[Main] FATAL: BLE advertiser init failed!");
+        LOG_ERROR("BLE advertiser init failed!");
         ledStatus.setMode(LedMode::OFF);
         return;
     }
@@ -155,7 +155,7 @@ void setupWifiConfigMode() {
     ledStatus.setMode(LedMode::BLINK, LED_WIFI_SLOW_BLINK_MS);
     wifiServer.setBleScanner(&bleScanner);
     if (!wifiServer.begin(&config)) {
-        Serial.println("[Main] FATAL: WiFi config server init failed!");
+        LOG_ERROR("WiFi config server init failed!");
         ledStatus.setMode(LedMode::OFF);
     }
 }
@@ -203,7 +203,7 @@ void loopWifiConfigMode() {
         lastClients = clients;
         if (clients > 0) {
             ledStatus.setMode(LedMode::ON);
-            Serial.printf("[Main] WiFi client connected (%d)\n", clients);
+            LOG_INFO("WiFi client connected (%d)", clients);
         } else {
             ledStatus.setMode(LedMode::BLINK, 500);
         }
@@ -214,13 +214,13 @@ void loopWifiConfigMode() {
 void onButtonEvent(ButtonEvent evt) {
     switch (evt) {
     case ButtonEvent::PRESSED:
-        Serial.println("[Button] Pressed");
+        LOG_INFO("Pressed");
         break;
     case ButtonEvent::RELEASED:
-        Serial.println("[Button] Released");
+        LOG_INFO("Released");
         break;
     case ButtonEvent::LONG_PRESS:
-        Serial.println("[Button] Long press detected");
+        LOG_INFO("Long press detected");
         if (gMode == RunMode::BLE_SCAN) {
             bleScanner.startScan();
         }

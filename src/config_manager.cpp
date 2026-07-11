@@ -2,14 +2,17 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 
+#define LOG_TAG "Config"
+#include "log.h"
+
 static const char* CONFIG_FILE = "/ble_dongle.json";
 
 bool ConfigManager::begin() {
     if (!LittleFS.begin(true)) {
-        Serial.println("[Config] LittleFS mount failed!");
+        LOG_ERROR("LittleFS mount failed!");
         return false;
     }
-    Serial.println("[Config] LittleFS mounted");
+    LOG_INFO("LittleFS mounted");
     _load();
     return true;
 }
@@ -20,13 +23,13 @@ String ConfigManager::_configPath() const {
 
 bool ConfigManager::_load() {
     if (!LittleFS.exists(CONFIG_FILE)) {
-        Serial.println("[Config] No config file, using defaults");
+        LOG_INFO("No config file, using defaults");
         return true;
     }
 
     File file = LittleFS.open(CONFIG_FILE, "r");
     if (!file) {
-        Serial.println("[Config] Failed to open config for reading");
+        LOG_ERROR("Failed to open config for reading");
         return false;
     }
 
@@ -35,8 +38,8 @@ bool ConfigManager::_load() {
 
     bool ok = configFromJson(json);
     if (ok) {
-        Serial.printf("[Config] Loaded: scanDuplicate=%d whitelist=%zu\n",
-                      _scanParams.scanDuplicate, _whitelist.size());
+        LOG_INFO("Loaded: scanDuplicate=%d whitelist=%zu",
+                 _scanParams.scanDuplicate, _whitelist.size());
     }
     return ok;
 }
@@ -45,13 +48,13 @@ bool ConfigManager::_save() {
     String json = configToJson();
     File file = LittleFS.open(CONFIG_FILE, "w");
     if (!file) {
-        Serial.println("[Config] Failed to open config for writing");
+        LOG_ERROR("Failed to open config for writing");
         return false;
     }
     file.print(json);
-    file.flush();   // 确保写入完成
+    file.flush();
     file.close();
-    Serial.printf("[Config] Config saved (scanDuplicate=%d)\n", _scanParams.scanDuplicate);
+    LOG_INFO("Config saved (scanDuplicate=%d)", _scanParams.scanDuplicate);
     return true;
 }
 
@@ -125,7 +128,7 @@ bool ConfigManager::configFromJson(const String& json) {
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, json);
     if (err) {
-        Serial.printf("[Config] JSON parse error: %s\n", err.c_str());
+        LOG_ERROR("JSON parse error: %s", err.c_str());
         return false;
     }
 

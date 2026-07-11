@@ -1,5 +1,8 @@
 #include "raw_ble_advertiser.h"
 
+#define LOG_TAG "RawAdv"
+#include "log.h"
+
 RawBleAdvertiser* RawBleAdvertiser::s_instance = nullptr;
 
 RawBleAdvertiser::RawBleAdvertiser() {
@@ -23,7 +26,7 @@ bool RawBleAdvertiser::begin(const char* deviceName) {
 bool RawBleAdvertiser::begin(ConfigManager* config) {
     _config = config;
     if (!_config) {
-        Serial.println("[RawAdv] FATAL: config pointer is null");
+        LOG_ERROR("config pointer is null");
         return false;
     }
 
@@ -201,7 +204,7 @@ void RawBleAdvertiser::clearScanResponseData() {
 
 bool RawBleAdvertiser::startAdvertising() {
     if (!_initialized) {
-        Serial.println("[RawAdv] Cannot start: not initialized");
+        LOG_ERROR("Cannot start: not initialized");
         return false;
     }
 
@@ -214,7 +217,7 @@ bool RawBleAdvertiser::startAdvertising() {
     uint8_t* advPtr = _advertisementData.empty() ? nullptr : const_cast<uint8_t*>(_advertisementData.data());
     esp_err_t err = esp_ble_gap_config_adv_data_raw(advPtr, _advertisementData.size());
     if (err != ESP_OK) {
-        Serial.printf("[RawAdv] esp_ble_gap_config_adv_data_raw failed: %d\n", err);
+        LOG_ERROR("esp_ble_gap_config_adv_data_raw failed: %d", err);
         return false;
     }
 
@@ -223,22 +226,20 @@ bool RawBleAdvertiser::startAdvertising() {
         uint8_t* rspPtr = _scanResponseData.empty() ? nullptr : const_cast<uint8_t*>(_scanResponseData.data());
         err = esp_ble_gap_config_scan_rsp_data_raw(rspPtr, _scanResponseData.size());
         if (err != ESP_OK) {
-            Serial.printf("[RawAdv] esp_ble_gap_config_scan_rsp_data_raw failed: %d\n", err);
+            LOG_ERROR("esp_ble_gap_config_scan_rsp_data_raw failed: %d", err);
             return false;
         }
     }
 
-    // 3. 立即启动广播 —— 不等待配置完成事件！
-    //    Bluedroid 内部使用消息队列，start_advertising 会在 config 完成后才被处理
     err = esp_ble_gap_start_advertising(&_advParams);
     if (err != ESP_OK) {
-        Serial.printf("[RawAdv] esp_ble_gap_start_advertising failed: %d\n", err);
+        LOG_ERROR("esp_ble_gap_start_advertising failed: %d", err);
         return false;
     }
 
     _advertising = true;
     _startTime = millis();
-    Serial.println("[RawAdv] Advertising started");
+    LOG_INFO("Advertising started");
     return true;
 }
 
@@ -249,12 +250,12 @@ void RawBleAdvertiser::stopAdvertising() {
 
     esp_err_t err = esp_ble_gap_stop_advertising();
     if (err != ESP_OK) {
-        Serial.printf("[RawAdv] esp_ble_gap_stop_advertising failed: %d\n", err);
+        LOG_ERROR("esp_ble_gap_stop_advertising failed: %d", err);
         return;
     }
 
     _advertising = false;
-    Serial.println("[RawAdv] Advertising stopped");
+    LOG_INFO("Advertising stopped");
 }
 
 void RawBleAdvertiser::update() {
@@ -296,7 +297,7 @@ bool RawBleAdvertiser::applyCustomMacFromConfig(const String& macStr) {
     int parsed = sscanf(macStr.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
                         &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]);
     if (parsed != 6) {
-        Serial.printf("[RawAdv] Invalid MAC format: %s\n", macStr.c_str());
+        LOG_ERROR("Invalid MAC format: %s", macStr.c_str());
         return false;
     }
 
@@ -322,28 +323,28 @@ bool RawBleAdvertiser::applyCustomMacFromConfig(const String& macStr) {
         }
 
         if (baseMac[0] & 0x01) {
-            Serial.printf("[RawAdv] MAC %s: base_mac bit0=1 (multicast), rejected.\n", macStr.c_str());
+            LOG_ERROR("MAC %s: base_mac bit0=1 (multicast), rejected", macStr.c_str());
             return false;
         }
 
         esp_err_t ret = esp_base_mac_addr_set(baseMac);
         if (ret != ESP_OK) {
-            Serial.printf("[RawAdv] Failed set base MAC (for BLE MAC %s): %d\n", macStr.c_str(), ret);
+            LOG_ERROR("Failed set base MAC (for BLE MAC %s): %d", macStr.c_str(), ret);
             return false;
         }
-        Serial.printf("[RawAdv] BLE Public MAC set: %s (base_mac: %02X:%02X:%02X:%02X:%02X:%02X)\n",
-                      macStr.c_str(),
-                      baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
+        LOG_INFO("BLE Public MAC set: %s (base_mac: %02X:%02X:%02X:%02X:%02X:%02X)",
+                 macStr.c_str(),
+                 baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
     } else {
         esp_err_t ret = esp_ble_gap_set_rand_addr(mac);
         if (ret != ESP_OK) {
-            Serial.printf("[RawAdv] Failed set random addr: %d\n", ret);
+            LOG_ERROR("Failed set random addr: %d", ret);
             return false;
         }
 
         esp_ble_gap_config_local_privacy(true);
         _advParams.own_addr_type = BLE_ADDR_TYPE_RANDOM;
-        Serial.printf("[RawAdv] Random MAC set: %s\n", macStr.c_str());
+        LOG_INFO("Random MAC set: %s", macStr.c_str());
     }
     return true;
 }

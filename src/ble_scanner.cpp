@@ -1,4 +1,8 @@
 #include "ble_scanner.h"
+#include "config_manager.h"
+
+#define LOG_TAG "BLE"
+#include "log.h"
 
 // ========== 设备发现回调 ==========
 void BleScanner::AdvertisedDeviceCallbacks::onResult(BLEAdvertisedDevice device) {
@@ -33,7 +37,7 @@ bool BleScanner::begin(ConfigManager* config) {
     // 从配置加载扫描参数（含 setCallbacks 的 wantDuplicates）
     applyScanParams();
 
-    Serial.println("[BLE] Scanner initialized");
+    LOG_INFO("Scanner initialized");
     startScan();
     return true;
 }
@@ -54,7 +58,7 @@ void BleScanner::applyScanParams() {
     _pBLEScan->setInterval(p.scanInterval);
     _pBLEScan->setWindow(p.scanWindow);
 
-    Serial.printf("[BLE] Scan params: interval=%u window=%u active=%s dupFilter=%s\n",
+    LOG_INFO("Scan params: interval=%u window=%u active=%s dupFilter=%s",
                   p.scanInterval, p.scanWindow, p.scanType ? "Y" : "N",
                   p.scanDuplicate ? "ON" : "OFF");
 }
