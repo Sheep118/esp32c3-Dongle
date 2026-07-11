@@ -66,7 +66,7 @@ void setup() {
         delay(50);
     }
     Serial.println("\r\n==========================================");
-    Serial.println("  BLE Dongle v2.0 — ESP32-C3");
+    Serial.println("  BLE Dongle v2.0 @ ESP32-C3");
     Serial.println("==========================================");
 
     // 1. LED 初始状态：自检中

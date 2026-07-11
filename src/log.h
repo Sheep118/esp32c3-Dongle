@@ -39,11 +39,47 @@
     #define LOG_HAS_TAG 0
 #endif
 
+// ── 日志等级（编译期过滤）──
+// platformio.ini: -DLOG_LEVEL=  (3=全开/INFO, 2=WARN以上, 1=ERROR, 0=全关)
+#ifndef LOG_LEVEL
+    #define LOG_LEVEL  3   // 默认全部输出
+#endif
+
+#if   LOG_LEVEL >= 3
+    #define LOG_ENABLE_INFO  1
+    #define LOG_ENABLE_WARN  1
+    #define LOG_ENABLE_ERROR 1
+#elif LOG_LEVEL == 2
+    #define LOG_ENABLE_INFO  0
+    #define LOG_ENABLE_WARN  1
+    #define LOG_ENABLE_ERROR 1
+#elif LOG_LEVEL == 1
+    #define LOG_ENABLE_INFO  0
+    #define LOG_ENABLE_WARN  0
+    #define LOG_ENABLE_ERROR 1
+#else
+    #define LOG_ENABLE_INFO  0
+    #define LOG_ENABLE_WARN  0
+    #define LOG_ENABLE_ERROR 0
+#endif
+
 // ── 日志宏 ──
 #if LOG_HAS_TAG
-    #define LOG_INFO(fmt, ...)  Serial.printf("[%s] " fmt "\r\n", LOG_TAG, ##__VA_ARGS__)
-    #define LOG_WARN(fmt, ...)  Serial.printf("[%s] WARN: " fmt "\r\n", LOG_TAG, ##__VA_ARGS__)
-    #define LOG_ERROR(fmt, ...) Serial.printf("[%s] ERROR: " fmt "\r\n", LOG_TAG, ##__VA_ARGS__)
+    #if LOG_ENABLE_INFO
+        #define LOG_INFO(fmt, ...)  Serial.printf("[%s] " fmt "\r\n", LOG_TAG, ##__VA_ARGS__)
+    #else
+        #define LOG_INFO(fmt, ...)  ((void)0)
+    #endif
+    #if LOG_ENABLE_WARN
+        #define LOG_WARN(fmt, ...)  Serial.printf("[%s] WARN: " fmt "\r\n", LOG_TAG, ##__VA_ARGS__)
+    #else
+        #define LOG_WARN(fmt, ...)  ((void)0)
+    #endif
+    #if LOG_ENABLE_ERROR
+        #define LOG_ERROR(fmt, ...) Serial.printf("[%s] ERROR: " fmt "\r\n", LOG_TAG, ##__VA_ARGS__)
+    #else
+        #define LOG_ERROR(fmt, ...) ((void)0)
+    #endif
 #else
     #define LOG_INFO(fmt, ...)  ((void)0)
     #define LOG_WARN(fmt, ...)  ((void)0)
