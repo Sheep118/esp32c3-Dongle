@@ -29,9 +29,9 @@
 #include "wifi_config.h"
 
 // ==================== 全局对象 ====================
-Led         ledStatus(LED_BUILTIN_1_PIN, LED_ACTIVE_HIGH);   // 状态指示灯 (GPIO12)
-Led         ledError(LED_BUILTIN_2_PIN, LED_ACTIVE_HIGH);    // 数据/错误灯 (GPIO13)
-Button      btnBoot(BUTTON_PIN, BUTTON_ACTIVE_LOW);
+Led         ledStatus(PIN_LED_STATUS, LED_ACTIVE_HIGH);   // 状态指示灯
+Led         ledError(PIN_LED_DATA, LED_ACTIVE_HIGH);      // 数据指示灯（预留）
+Button      btnBoot(PIN_BUTTON, BUTTON_ACTIVE_LOW);
 ConfigManager config;
 BleScanner  bleScanner;
 RawBleAdvertiser bleAdvertiser;
@@ -83,11 +83,11 @@ void setup() {
     Serial.println("[Main] Hold button within 2s for WiFi Config mode...");
     ledStatus.setMode(LedMode::ON);
 
-    const uint32_t BOOT_WINDOW_MS = 2000;
+    const uint32_t BOOT_WINDOW_MS_VAL = BOOT_WINDOW_MS;
     uint32_t checkStart = millis();
     bool buttonWasPressed = false;
 
-    while (millis() - checkStart < BOOT_WINDOW_MS) {
+    while (millis() - checkStart < BOOT_WINDOW_MS_VAL) {
         btnBoot.update();
         if (btnBoot.isPressed()) {
             buttonWasPressed = true;
@@ -132,19 +132,19 @@ void setup() {
 
 // ==================== BLE 扫描模式 ====================
 void setupBleScanMode() {
-    ledStatus.setMode(LedMode::BLINK, 200);
+    ledStatus.setMode(LedMode::BLINK, LED_SCAN_BLINK_MS);
     if (!bleScanner.begin(&config)) {
         Serial.println("[Main] FATAL: BLE scanner init failed!");
-        ledStatus.setMode(LedMode::BLINK, 100);
+        ledStatus.setMode(LedMode::OFF);
     }
 }
 
 // ==================== BLE 模拟广播模式 ====================
 void setupBleAdvMode() {
-    ledStatus.setMode(LedMode::ON);
+    ledStatus.setMode(LedMode::DOUBLE_BLINK, LED_ADV_DB_FLASH_MS, LED_ADV_DB_GAP_MS);
     if (!bleAdvertiser.begin(&config)) {
         Serial.println("[Main] FATAL: BLE advertiser init failed!");
-        ledStatus.setMode(LedMode::BLINK, 100);
+        ledStatus.setMode(LedMode::OFF);
         return;
     }
     bleAdvertiser.startAdvertising();
@@ -152,11 +152,11 @@ void setupBleAdvMode() {
 
 // ==================== Wi-Fi 配置模式 ====================
 void setupWifiConfigMode() {
-    ledStatus.setMode(LedMode::BLINK, 800);
+    ledStatus.setMode(LedMode::BLINK, LED_WIFI_SLOW_BLINK_MS);
     wifiServer.setBleScanner(&bleScanner);
     if (!wifiServer.begin(&config)) {
         Serial.println("[Main] FATAL: WiFi config server init failed!");
-        ledStatus.setMode(LedMode::BLINK, 100);
+        ledStatus.setMode(LedMode::OFF);
     }
 }
 
@@ -252,11 +252,13 @@ void setup() {
     // advertiser.setScanResponseDataHex("03FF1122");
     // advertiser.setScanResponseEnabled(true);
     advertiser.startAdvertising();
+    ledStatus.setMode(LedMode::DOUBLE_BLINK, 100, 1500);
 }
 
 void loop(){
     advertiser.update();
-    Serial.println("adversting....");
-    delay(1000);
+    ledStatus.update();
+    // Serial.println("adversting....");
+    // delay(1000);
 }
 #endif

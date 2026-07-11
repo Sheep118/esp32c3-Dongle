@@ -4,12 +4,19 @@
 #include <Arduino.h>
 #include <functional>
 
-/**
- * 按键引脚定义 —— 自行修改为你实际的 GPIO
- * 默认使用 GPIO 9 (ESP32-C3 通用按键脚，请按实际接线调整)
+/*
+ * 按键引脚和极性定义在 platformio.ini 的 build_flags 中：
+ *   -DPIN_BUTTON=9         按键 GPIO
+ *   -DBUTTON_ACTIVE_LOW=true 按下为低电平
+ *
+ * 此处提供默认值以防 build_flags 未定义。
  */
-#define BUTTON_PIN         9
-#define BUTTON_ACTIVE_LOW  true   // true = 按下为低电平
+#ifndef PIN_BUTTON
+#define PIN_BUTTON         9
+#endif
+#ifndef BUTTON_ACTIVE_LOW
+#define BUTTON_ACTIVE_LOW  true
+#endif
 
 /**
  * 按键事件类型
