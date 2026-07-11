@@ -1,8 +1,10 @@
 #include "wifi_config.h"
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include <lwip/dns.h>
+#include <lwip/netif.h>
 #include "ble_scanner.h"
-#include "webpage.h"   // 独立 HTML 页面（编译期由 embed_html.py 生成）
+#include "webpage.h"
 
 // =============== WifiConfigServer ===============
 WifiConfigServer::WifiConfigServer() : _config(nullptr), _server(nullptr), _bleScanner(nullptr) {}
@@ -14,23 +16,102 @@ void WifiConfigServer::setBleScanner(BleScanner* scanner) {
 bool WifiConfigServer::begin(ConfigManager* config) {
     _config = config;
 
-    // 启动 Wi-Fi AP
+    // 先关闭 WiFi，确保干净状态
+    WiFi.mode(WIFI_OFF);
+    delay(100);
     WiFi.mode(WIFI_AP);
+
+    // 用 esp_wifi 底层 API 配置 DHCP-DNS 为 AP IP
+    // 这样客户端获取的 DNS 就是 192.168.4.1，任何 DNS 查询都被发到 ESP32
     WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL, 0, WIFI_AP_MAX_CLIENTS);
 
-    IPAddress ip = WiFi.softAPIP();
-    Serial.printf("[WiFi] AP started: SSID=%s IP=%s\n", WIFI_AP_SSID, ip.toString().c_str());
+    IPAddress apIp = WiFi.softAPIP();
 
-    // 启动 Web 服务器
+    // ====== 关键修改：用 lwIP DNS 服务器直接接管 ======
+    // 在 ESP32 NAT 模式下，将所有 DNS 查询指向自己
+    // 把 DHCP 广播的 DNS 服务地址设置成 AP IP
+    {
+        ip_addr_t dns_ip;
+        IP_ADDR4(&dns_ip, apIp[0], apIp[1], apIp[2], apIp[3]);
+        dhcps_dns_setserver(&dns_ip);
+        dns_setserver(0, &dns_ip);  // lwIP 主 DNS 指向自己
+    }
+    _apIp = apIp;
+
+    // 启动自定义 UDP DNS 响应
+    _dnsUdp.begin(53);  // 监听 53 端口
+
+    Serial.printf("[WiFi] AP started: SSID=%s IP=%s\n", WIFI_AP_SSID, apIp.toString().c_str());
+    Serial.println("[WiFi] DHCP DNS set to AP IP, UDP DNS on port 53");
+
+    // ====== Web 服务器 ======
     _server = new WebServer(80);
     _setupRoutes();
     _server->begin();
-    Serial.println("[WiFi] HTTP server started on port 80");
+    Serial.println("[WiFi] HTTP server on port 80 | Visit http://any.domain in browser");
 
     return true;
 }
 
+/**
+ * 手动处理 UDP DNS 查询 —— 替代 DNSServer 库
+ * DNSServer 内部用 _udp.begin(53) 和 lwIP dns_setserver 冲突
+ * 这里直接用 WiFiUDP + 手动构建 DNS 响应包
+ */
+static bool _resolveDnsQuery(WiFiUDP& udp, IPAddress& apIp) {
+    int pktSize = udp.parsePacket();
+    if (pktSize < 12) return false;  // DNS 头最小 12 字节
+
+    uint8_t buf[256];
+    int len = udp.read(buf, sizeof(buf));
+    if (len < 12) return false;
+
+    // 只处理标准查询 (QR=0, OPCode=0)
+    if ((buf[2] & 0x80) != 0) return false;             // 不是查询
+    if (((buf[2] >> 3) & 0x0F) != 0) return false;      // 不是标准查询
+
+    // 构建 DNS 响应
+    uint8_t response[512];
+    memcpy(response, buf, len);  // 复制查询部分
+
+    // DNS 标志: QR=1 (响应), OPCode=0, AA=1, RD 继承查询
+    response[2] = 0x85;   // QR=1, OPCode=0, AA=1, TC=0, RD=1
+    response[3] = 0x80;   // RA=1, Z=0, RCODE=0
+    // 问题数保持原样
+    // 回答数 = 1
+    response[6] = 0x00; response[7] = 0x01;
+    // 权威记录数 = 0
+    response[8] = 0x00; response[9] = 0x00;
+    // 附加记录数 = 0
+    response[10] = 0x00; response[11] = 0x00;
+
+    // 答案部分：Name(压缩指针: 0xC00C 指向查询中的域名) + Type(A=1) + Class(IN=1)
+    // + TTL(60s) + DataLength(4) + IP(4)
+    int ansPos = len;
+    response[ansPos++] = 0xC0; response[ansPos++] = 0x0C;  // 压缩指针
+    response[ansPos++] = 0x00; response[ansPos++] = 0x01;  // Type A
+    response[ansPos++] = 0x00; response[ansPos++] = 0x01;  // Class IN
+    response[ansPos++] = 0x00; response[ansPos++] = 0x00;
+    response[ansPos++] = 0x00; response[ansPos++] = 0x3C;  // TTL = 60
+    response[ansPos++] = 0x00; response[ansPos++] = 0x04;  // Data length = 4
+    response[ansPos++] = apIp[0]; response[ansPos++] = apIp[1];
+    response[ansPos++] = apIp[2]; response[ansPos++] = apIp[3];
+
+    udp.beginPacket(udp.remoteIP(), udp.remotePort());
+    udp.write(response, ansPos);
+    udp.endPacket();
+    return true;
+}
+
 void WifiConfigServer::update() {
+    // DNS: 手动处理所有排队的 UDP 包
+    for (int i = 0; i < 10; i++) {
+        if (_resolveDnsQuery(_dnsUdp, _apIp)) {
+            // 解析成功
+        } else {
+            break;  // 没有更多包了
+        }
+    }
     if (_server) {
         _server->handleClient();
     }
@@ -41,7 +122,10 @@ int WifiConfigServer::getClientCount() const {
 }
 
 void WifiConfigServer::_setupRoutes() {
+    // 首页
     _server->on("/",                   HTTP_GET,  [this](){ _handleRoot(); });
+
+    // API 路由
     _server->on("/api/config",         HTTP_GET,  [this](){ _handleGetConfig(); });
     _server->on("/api/config",         HTTP_POST, [this](){ _handleSaveConfig(); });
     _server->on("/api/config",         HTTP_DELETE, [this](){ _handleClearAll(); });
@@ -49,10 +133,21 @@ void WifiConfigServer::_setupRoutes() {
     _server->on("/api/entry",          HTTP_DELETE, [this](){ _handleDeleteEntry(); });
     _server->on("/api/scanparams",     HTTP_GET,  [this](){ _handleGetScanParams(); });
     _server->on("/api/reboot",         HTTP_POST, [this](){ _handleReboot(); });
-    _server->onNotFound([this](){ _handleNotFound(); });
+
+    // Captive Portal 检测端点
+    _server->on("/generate_204",              HTTP_GET, [this](){ _handleCaptivePortal(); });  // Android / ChromeOS
+    _server->on("/hotspot-detect.html",       HTTP_GET, [this](){ _handleCaptivePortal(); });  // iOS / macOS
+    _server->on("/library/test/success.html", HTTP_GET, [this](){ _handleCaptivePortal(); });  // iOS 7+
+    _server->on("/success.txt",               HTTP_GET, [this](){ _handleCaptivePortal(); });  // 部分 Android
+    _server->on("/canonical.html",            HTTP_GET, [this](){ _handleCaptivePortal(); });  // Firefox
+    _server->on("/favicon.ico",               HTTP_GET, [this](){ _handleHttp302ToRoot(); });  // 导到首页
+
+    // 通配：所有未匹配 GET → 302 重定向到首页（通用网站跳转 + Windows fallback）
+    _server->onNotFound([this](){ _handleCaptivePortal(); });
 }
 
 void WifiConfigServer::_handleRoot() {
+    Serial.printf("[Web] GET /  (client IP=%s)\n", _server->client().remoteIP().toString().c_str());
     _server->send_P(200, "text/html; charset=utf-8", INDEX_HTML);
 }
 
@@ -140,6 +235,29 @@ void WifiConfigServer::_handleReboot() {
     ESP.restart();
 }
 
-void WifiConfigServer::_handleNotFound() {
-    _server->send(404, "text/plain", "404 Not Found");
+/**
+ * Captive Portal Handler
+ *
+ * Android/iOS: 系统探测 URL → 收到 302 → 自动弹出 Portal 浏览器
+ * 通用:     用户浏览器访问任意网址 → DNS 劫持 to ESP32 → 302 到首页
+ */
+void WifiConfigServer::_handleCaptivePortal() {
+    String uri = _server->uri();
+    String host = _server->hostHeader();
+    Serial.printf("[Portal] uri=%s host=%s\n", uri.c_str(), host.c_str());
+
+    // iOS / macOS hotspot detect: 返回非 "Success" 触发 Portal
+    if (uri == "/hotspot-detect.html" || uri == "/library/test/success.html") {
+        _server->send(200, "text/html", "Redirecting...");
+        return;
+    }
+
+    // Android generate_204 及所有其他 URL: 302 重定向到首页
+    _server->sendHeader("Location", "http://192.168.4.1/", true);
+    _server->send(302, "text/plain", "Redirecting...");
+}
+
+void WifiConfigServer::_handleHttp302ToRoot() {
+    _server->sendHeader("Location", "/", true);
+    _server->send(302, "text/plain", "");
 }

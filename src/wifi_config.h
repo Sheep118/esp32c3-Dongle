@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <WebServer.h>
+#include <WiFiUdp.h>
 #include "config_manager.h"
 
 class BleScanner; // 前向声明
@@ -18,7 +19,8 @@ class BleScanner; // 前向声明
 /**
  * Wi-Fi 配置模式
  * - 启动 Wi-Fi AP 热点
- * - 提供 Web 配置页面用于管理 BLE 白名单
+ * - DNS 劫持 + Captive Portal（Android/iOS 自动弹窗，通用 HTTP 302 跳转）
+ * - 提供 Web 配置页面用于管理 BLE 白名单和参数
  */
 class WifiConfigServer {
 public:
@@ -27,10 +29,10 @@ public:
     /** 设置 BLE Scanner 引用（用于热应用扫描参数） */
     void setBleScanner(BleScanner* scanner);
 
-    /** 启动 AP 和 Web 服务器 */
+    /** 启动 AP 和 Web 服务器，同时启动 Captive Portal (DNS + NotFound) */
     bool begin(ConfigManager* config);
 
-    /** 必须在主 loop() 中周期性调用 */
+    /** 必须在主 loop() 中周期性调用（处理 Web + DNS 请求） */
     void update();
 
     /** 获取已连接的客户端数 */
@@ -39,38 +41,26 @@ public:
 private:
     ConfigManager* _config;
     WebServer*     _server;
+    WiFiUDP        _dnsUdp;       ///< 手动 DNS 响应 UDP socket
+    IPAddress      _apIp;          ///< AP IP 地址（DNS 解析到此）
     BleScanner*    _bleScanner;
 
     /** 注册所有 API 路由 */
     void _setupRoutes();
 
     // ---- HTTP 处理函数 ----
-    /** 首页 - 配置管理页面 */
     void _handleRoot();
-
-    /** 获取当前白名单 (JSON) */
     void _handleGetConfig();
-
-    /** 保存白名单 (JSON) */
     void _handleSaveConfig();
-
-    /** 添加单条白名单 */
     void _handleAddEntry();
-
-    /** 删除指定条目 */
     void _handleDeleteEntry();
-
-    /** 清除所有条目 */
     void _handleClearAll();
-
-    /** 获取 BLE 扫描参数 */
     void _handleGetScanParams();
-
-    /** 重启设备 */
     void _handleReboot();
-
-    /** 404 */
-    void _handleNotFound();
+    /** Captive Portal：任何未匹配 GET 请求返回首页（接管 404） */
+    void _handleCaptivePortal();
+    /** 302 重定向到根路径 */
+    void _handleHttp302ToRoot();
 };
 
 #endif // WIFI_CONFIG_H
