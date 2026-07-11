@@ -130,6 +130,7 @@ void WifiConfigServer::_setupRoutes() {
     _server->on("/api/entry",          HTTP_POST, [this](){ _handleAddEntry(); });
     _server->on("/api/entry",          HTTP_DELETE, [this](){ _handleDeleteEntry(); });
     _server->on("/api/scanparams",     HTTP_GET,  [this](){ _handleGetScanParams(); });
+    _server->on("/api/scanformat",     HTTP_GET,  [this](){ _handleGetScanFormat(); });
     _server->on("/api/reboot",         HTTP_POST, [this](){ _handleReboot(); });
 
     // Captive Portal 检测端点
@@ -219,6 +220,21 @@ void WifiConfigServer::_handleGetScanParams() {
     doc["scanDuplicate"]    = p.scanDuplicate;
     doc["ownAddrType"]      = p.ownAddrType;
     doc["scanFilterPolicy"] = p.scanFilterPolicy;
+    String out;
+    serializeJson(doc, out);
+    _server->send(200, "application/json; charset=utf-8", out);
+}
+
+void WifiConfigServer::_handleGetScanFormat() {
+    if (!_config) {
+        _server->send(500, "application/json", "{\"status\":\"error\"}");
+        return;
+    }
+    BleScanFormat f = _config->getScanFormat();
+    JsonDocument doc;
+    doc["scanStartFmt"]  = f.scanStartFmt;
+    doc["scanResultFmt"] = f.scanResultFmt;
+    doc["scanEndFmt"]    = f.scanEndFmt;
     String out;
     serializeJson(doc, out);
     _server->send(200, "application/json; charset=utf-8", out);

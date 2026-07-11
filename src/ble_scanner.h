@@ -44,6 +44,9 @@ public:
     /** 应用配置中的 BLE 扫描参数（扫描间隔/窗口/类型等） */
     void applyScanParams();
 
+    /** 编译用户格式字符串 → printf 格式串（开机时调用一次） */
+    void compileFormats(const BleScanFormat& fmt);
+
     /** 设置扫描持续时间（秒），默认 5 秒一个周期 */
     void setScanDuration(uint32_t seconds);
 
@@ -78,6 +81,11 @@ private:
     volatile int _txTail;   // 消费者（loop）读取位置
 
     void _enqueue(const char* line);
+
+    // ---- 编译后的 printf 格式串（开机时由 compileFormats 生成） ----
+    char _fmtScanStart[TX_LINE_MAX];   // 扫描开始 → snprintf 格式
+    char _fmtScanResult[TX_LINE_MAX];  // 扫描结果 → snprintf 格式
+    char _fmtScanEnd[TX_LINE_MAX];     // 扫描结束 → snprintf 格式
 
     // ---- BLE 逻辑 ----
     bool _matchWhitelist(BLEAdvertisedDevice& device) const;

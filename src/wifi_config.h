@@ -52,6 +52,7 @@ private:
     void _handleDeleteEntry();
     void _handleClearAll();
     void _handleGetScanParams();
+    void _handleGetScanFormat();
     void _handleReboot();
     /** Captive Portal：任何未匹配 GET 请求返回首页（接管 404） */
     void _handleCaptivePortal();

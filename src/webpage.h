@@ -86,6 +86,45 @@ tr:hover{background:#f8f9fa}
   </div>
 </div>
 
+<!-- ====== 高级选项：自定义输出格式 ====== -->
+<div class="card" id="advOptCard">
+  <h2 style="cursor:pointer;user-select:none" onclick="toggleAdvOpt()">⚙ 高级选项：自定义输出格式 <span id="advArrow" style="font-size:12px;color:#999;margin-left:8px">▼ 展开</span></h2>
+  <div id="advOptBody" style="display:none">
+    <p style="font-size:12px;color:#888;margin-bottom:12px">
+      使用占位符自定义串口输出格式。可用标识：<br>
+      <b>开始扫描</b>: <code>&lt;duration&gt;</code><br>
+      <b>扫描结果</b>: <code>&lt;mac&gt;</code> <code>&lt;rssi&gt;</code> <code>&lt;addr&gt;</code> <code>&lt;name&gt;</code> <code>&lt;manuf&gt;</code> <code>&lt;uuid&gt;</code><br>
+      <b>扫描结束</b>: <code>&lt;total&gt;</code> <code>&lt;matched&gt;</code><br>
+      留空 = 不输出该行。非法占位符（如扫描开始中使用 <code>&lt;mac&gt;</code>）将原样打印，不会被替换。
+    </p>
+
+    <div class="form-group" style="margin-bottom:10px">
+      <label>📤 扫描开始输出格式</label>
+      <input type="text" id="sfStart" style="font-family:monospace;font-size:12px" placeholder="$SCAN_START|DURATION:<duration>">
+      <div class="hint">占位符：<code>&lt;duration&gt;</code>（扫描持续秒数）。留空=不输出</div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:10px">
+      <label>📋 扫描结果输出格式</label>
+      <input type="text" id="sfResult" style="font-family:monospace;font-size:12px" placeholder="$BLE|MAC:<mac>|RSSI:<rssi>|ADDR:<addr>|NAME:<name>|MANUF:<manuf>|UUID:<uuid>">
+      <div class="hint">占位符：<code>&lt;mac&gt;</code> <code>&lt;rssi&gt;</code> <code>&lt;addr&gt;</code> <code>&lt;name&gt;</code> <code>&lt;manuf&gt;</code> <code>&lt;uuid&gt;</code></div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:10px">
+      <label>📥 扫描结束输出格式</label>
+      <input type="text" id="sfEnd" style="font-family:monospace;font-size:12px" placeholder="$SCAN_END|TOTAL:<total>|MATCHED:<matched>">
+      <div class="hint">占位符：<code>&lt;total&gt;</code> <code>&lt;matched&gt;</code>。留空=不输出</div>
+    </div>
+
+    <div style="margin-top:8px">
+      <button class="btn btn-sm" style="background:#888" onclick="resetScanFormat()">🔄 恢复默认格式</button>
+      <button class="btn btn-sm" style="background:#888;margin-left:8px" onclick="clearScanFormat()">🗑 全部清空</button>
+    </div>
+
+    <div id="sfWarn" style="margin-top:10px"></div>
+  </div>
+</div>
+
 <div class="card">
   <h2>📋 白名单规则</h2>
   <div class="form-row">
@@ -428,6 +467,7 @@ function loadConfig(){
       document.getElementById('asr').value=ap.scanRespHex;
     }
     // 触发联动（不插入默认 Flag）
+    loadScanFormat();  // 加载输出格式
   });
 }
 
@@ -476,6 +516,9 @@ function saveAll(){
   if(isNaN(sw)||sw<4||sw>16384){alert('❌ 扫描窗口范围 4~16384 (×0.625ms)');return}
   if(sw>si){alert('❌ 扫描窗口 ('+sw+') 必须 ≤ 扫描间隔 ('+si+')');return}
 
+  // ====== 扫描输出格式校验 ======
+  if(!validateScanFormat()) return;
+
   // ====== 广播 MAC 校验 ======
   var mac=document.getElementById('am').value.trim();
   var macErr=validateMac(mac);
@@ -493,9 +536,104 @@ function saveAll(){
   if(aS>31){alert('❌ 扫描响应数据长度为 '+aS+' 字节，超过 31 字节限制！');return}
 
   var sp={scanInterval:parseInt(document.getElementById('si').value)||100,scanWindow:parseInt(document.getElementById('sw').value)||99,scanType:parseInt(document.getElementById('st').value)||1,scanDuplicate:document.getElementById('sd').value==='1',ownAddrType:0,scanFilterPolicy:0};
+  var sf={scanStartFmt:document.getElementById('sfStart').value.trim(),scanResultFmt:document.getElementById('sfResult').value.trim(),scanEndFmt:document.getElementById('sfEnd').value.trim()};
   var ap={customMac:mac,advDataHex:ah,scanRespHex:as_x,txPower:parseInt(document.getElementById('ap').value)||0,advIntervalMin:minInt,advIntervalMax:maxInt,advDuration:parseInt(document.getElementById('ad').value)||0,advType:parseInt(document.getElementById('at').value)||0,channelMap:parseInt(document.getElementById('ach').value)||7};
-  var payload={deviceMode:M,whitelist:W,scanParams:sp,advConfig:ap};
+  var payload={deviceMode:M,whitelist:W,scanParams:sp,scanFormat:sf,advConfig:ap};
   fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json()}).then(function(){alert('✅ 保存成功，重启后生效')}).catch(function(){alert('❌ 保存失败')});
+}
+
+// ========== 高级选项：自定义输出格式 ==========
+
+// 默认格式（用户友好占位符版本）
+var DEFS={
+  s:'$SCAN_START|DURATION:<duration>',
+  r:'$BLE|MAC:<mac>|RSSI:<rssi>|ADDR:<addr>|NAME:<name>|MANUF:<manuf>|UUID:<uuid>',
+  e:'$SCAN_END|TOTAL:<total>|MATCHED:<matched>'
+};
+
+function toggleAdvOpt(){
+  var b=document.getElementById('advOptBody');
+  var a=document.getElementById('advArrow');
+  if(b.style.display==='none'){
+    b.style.display='block';a.innerHTML='▲ 收起';
+  }else{
+    b.style.display='none';a.innerHTML='▼ 展开';
+  }
+}
+
+// 从 API 加载 scanFormat
+function loadScanFormat(){
+  fetch('/api/scanformat').then(function(r){return r.json()}).then(function(d){
+    document.getElementById('sfStart').value=d.scanStartFmt||'';
+    document.getElementById('sfResult').value=d.scanResultFmt||'';
+    document.getElementById('sfEnd').value=d.scanEndFmt||'';
+  });
+}
+
+function resetScanFormat(){
+  document.getElementById('sfStart').value=DEFS.s;
+  document.getElementById('sfResult').value=DEFS.r;
+  document.getElementById('sfEnd').value=DEFS.e;
+}
+
+function clearScanFormat(){
+  document.getElementById('sfStart').value='';
+  document.getElementById('sfResult').value='';
+  document.getElementById('sfEnd').value='';
+}
+
+// 校验扫描输出格式（在 saveAll 中调用）
+function validateScanFormat(){
+  var startFmt=document.getElementById('sfStart').value.trim();
+  var resultFmt=document.getElementById('sfResult').value.trim();
+  var endFmt=document.getElementById('sfEnd').value.trim();
+  var warns=[],div=document.getElementById('sfWarn');
+  div.innerHTML='';
+
+  // 扫描结果为空 → 需要确认
+  if(!resultFmt){
+    if(!confirm('⚠ 当前"扫描结果输出格式"为空，保存后扫描将<b>不会输出任何设备信息</b>。\n\n确定要这样保存吗？')) return false;
+  }
+
+  // 检测非法占位符（不在允许列表中的 <xxx> 标签）
+  // scanStart 只允许 <duration>
+  var invalidStart=detectInvalidPlaceholders(startFmt,['duration']);
+  if(invalidStart.length>0){
+    var w='⚠ 开始扫描文本中检测到无效占位符：'+invalidStart.join(',')+'<br>这些标签将<b>原样打印</b>，不会被替换为实际值。<br>仅允许：&lt;duration&gt;';
+    warns.push(w);
+  }
+
+  // scanEnd 只允许 <total> <matched>
+  var invalidEnd=detectInvalidPlaceholders(endFmt,['total','matched']);
+  if(invalidEnd.length>0){
+    var w='⚠ 结束扫描文本中检测到无效占位符：'+invalidEnd.join(',')+'<br>这些标签将<b>原样打印</b>，不会被替换为实际值。<br>仅允许：&lt;total&gt; &lt;matched&gt;';
+    warns.push(w);
+  }
+
+  // scanResult 检查有效占位符是否都在
+  var validR=['mac','rssi','addr','name','manuf','uuid'];
+  var invalidR=detectInvalidPlaceholders(resultFmt,validR);
+  if(invalidR.length>0){
+    var w='⚠ 扫描结果文本中检测到无效占位符：'+invalidR.join(',')+'<br>这些标签将<b>原样打印</b>。有效占位符：'+validR.map(function(v){return '&lt;'+v+'&gt;'}).join(', ');
+    warns.push(w);
+  }
+
+  if(warns.length>0){
+    div.innerHTML='<div class="bar warn">'+warns.join('</div><div class="bar warn" style="margin-top:4px">')+'</div>';
+    return true; // 警告但不阻止保存
+  }
+  return true;
+}
+
+// 检测文本中不在白名单中的 <xxx> 占位符
+function detectInvalidPlaceholders(text,validList){
+  var re=/<(\w+)>/g,m,invalid=[];
+  while((m=re.exec(text))!==null){
+    if(validList.indexOf(m[1])===-1 && invalid.indexOf(m[1])===-1){
+      invalid.push('&lt;'+m[1]+'&gt;');
+    }
+  }
+  return invalid;
 }
 
 function reboot(){if(!confirm('确定重启设备？'))return;fetch('/api/reboot',{method:'POST'});alert('设备正在重启...')}

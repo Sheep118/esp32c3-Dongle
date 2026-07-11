@@ -7,6 +7,11 @@
 
 static const char* CONFIG_FILE = "/ble_dongle.json";
 
+// 默认扫描输出格式（用户友好占位符版本）
+const char* DEFAULT_SCAN_START_FMT  = "$SCAN_START|DURATION:<duration>";
+const char* DEFAULT_SCAN_RESULT_FMT = "$BLE|MAC:<mac>|RSSI:<rssi>|ADDR:<addr>|NAME:<name>|MANUF:<manuf>|UUID:<uuid>";
+const char* DEFAULT_SCAN_END_FMT    = "$SCAN_END|TOTAL:<total>|MATCHED:<matched>";
+
 bool ConfigManager::begin() {
     if (!LittleFS.begin(true)) {
         LOG_ERROR("LittleFS mount failed!");
@@ -107,6 +112,12 @@ String ConfigManager::configToJson() const {
     sp["ownAddrType"]      = _scanParams.ownAddrType;
     sp["scanFilterPolicy"] = _scanParams.scanFilterPolicy;
 
+    // BLE 扫描输出格式
+    JsonObject sf = doc["scanFormat"].to<JsonObject>();
+    sf["scanStartFmt"]  = _scanFormat.scanStartFmt;
+    sf["scanResultFmt"] = _scanFormat.scanResultFmt;
+    sf["scanEndFmt"]    = _scanFormat.scanEndFmt;
+
     // BLE 广播参数
     JsonObject ap = doc["advConfig"].to<JsonObject>();
     ap["customMac"]       = _advConfig.customMac;
@@ -167,6 +178,20 @@ bool ConfigManager::configFromJson(const String& json) {
         _scanParams.scanFilterPolicy = sp["scanFilterPolicy"] | 0;
     }
 
+    // BLE 扫描输出格式
+    JsonObject sf = doc["scanFormat"];
+    if (!sf.isNull()) {
+        _scanFormat.scanStartFmt  = sf["scanStartFmt"]  | "";
+        _scanFormat.scanResultFmt = sf["scanResultFmt"] | "";
+        _scanFormat.scanEndFmt    = sf["scanEndFmt"]    | "";
+    }
+    // 如果全部为空，恢复默认
+    if (_scanFormat.scanStartFmt.isEmpty() && _scanFormat.scanResultFmt.isEmpty() && _scanFormat.scanEndFmt.isEmpty()) {
+        _scanFormat.scanStartFmt  = DEFAULT_SCAN_START_FMT;
+        _scanFormat.scanResultFmt = DEFAULT_SCAN_RESULT_FMT;
+        _scanFormat.scanEndFmt    = DEFAULT_SCAN_END_FMT;
+    }
+
     // BLE 广播参数
     JsonObject ap = doc["advConfig"];
     if (!ap.isNull()) {
@@ -208,6 +233,15 @@ BleScanParams ConfigManager::getScanParams() const {
 
 void ConfigManager::setScanParams(const BleScanParams& params) {
     _scanParams = params;
+    _save();
+}
+
+BleScanFormat ConfigManager::getScanFormat() const {
+    return _scanFormat;
+}
+
+void ConfigManager::setScanFormat(const BleScanFormat& fmt) {
+    _scanFormat = fmt;
     _save();
 }
 
