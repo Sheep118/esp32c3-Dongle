@@ -47,13 +47,15 @@ struct BleScanParams {
  * BLE 模拟广播参数配置
  */
 struct BleAdvConfig {
-    String  customMac;       // 自定义 MAC 地址 (空=使用默认)
-    String  advDataHex;      // 广播数据 HEX 字符串 (如 "02010603034C00")
-    String  scanRespHex;     // 扫描响应数据 HEX 字符串
-    int8_t  txPower = 0;     // 发射功率 (dBm, 范围 -12 ~ +9)
-    uint16_t advInterval = 100;  // 广播间隔 (单位 0.625ms, 默认 100≈62.5ms)
-    uint32_t advDuration = 0;    // 广播时长 (秒, 0=持续广播)
-    uint8_t  advType = 0;        // 0=ADV_IND, 1=ADV_DIRECT, 2=ADV_NONCONN
+    String  customMac;        // 自定义 MAC 地址 (空=使用默认)
+    String  advDataHex;       // 广播数据 HEX 字符串 (如 "02010603034C00")
+    String  scanRespHex;      // 扫描响应数据 HEX 字符串
+    int8_t  txPower = 0;      // 发射功率 (dBm, 范围 -12 ~ +9)
+    uint16_t advIntervalMin = 100;  // 最小广播间隔 (单位 0.625ms, 默认 100≈62.5ms)
+    uint16_t advIntervalMax = 100;  // 最大广播间隔 (单位 0.625ms, 默认 100≈62.5ms)
+    uint32_t advDuration = 0;       // 广播时长 (秒, 0=持续广播)
+    uint8_t  advType = 0;           // 0=ADV_IND, 2=ADV_SCAN_IND, 3=ADV_NONCONN_IND
+    uint8_t  channelMap = 7;        // 广播信道位掩码: bit0=CH37(1), bit1=CH38(2), bit2=CH39(4), 默认 7=全部
 };
 
 /**

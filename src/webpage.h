@@ -53,6 +53,9 @@ tr:hover{background:#f8f9fa}
 .bar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f0fdf0;border-radius:8px;margin-bottom:8px;font-size:12px;color:#2a7d2a}
 .bar.warn{background:#fff8e1;color:#996b00}
 .bar.err{background:#ffeaea;color:#b30000}
+.drag{cursor:grab;user-select:none}
+.drag-icon{display:inline-block;margin-right:6px;color:#aaa;font-size:14px;cursor:grab;vertical-align:middle}
+.drag-over td{background:#e8f0fe!important}
 </style>
 </head>
 <body>
@@ -105,9 +108,20 @@ tr:hover{background:#f8f9fa}
     <div class="form-group"><label>广播类型</label><select id="at"><option value="0">ADV_IND（可连接）</option><option value="2">ADV_SCAN_IND</option><option value="3">ADV_NONCONN_IND</option></select></div>
   </div>
   <div class="form-row">
-    <div class="form-group"><label>广播间隔 (0.625ms)</label><input type="number" id="ai" value="100" min="20" max="4000"><div class="hint">范围 20~4000，即 12.5ms~2.5s</div></div>
-    <div class="form-group"><label>发射功率</label><select id="ap"><option value="-12">-12 dBm</option><option value="-9">-9 dBm</option><option value="-6">-6 dBm</option><option value="-3">-3 dBm</option><option value="0" selected>0 dBm</option><option value="3">3 dBm</option><option value="6">6 dBm</option><option value="9">9 dBm</option></select></div>
+    <div class="form-group"><label>最小广播间隔 (0.625ms)</label><input type="number" id="ai_min" value="100" min="20" max="4000"><div class="hint">范围 20~4000，即 12.5ms~2.5s</div></div>
+    <div class="form-group"><label>最大广播间隔 (0.625ms)</label><input type="number" id="ai_max" value="100" min="20" max="4000"><div class="hint">必须 ≥ 最小间隔</div></div>
   </div>
+  <div class="form-row">
+    <div class="form-group"><label>发射功率</label><select id="ap"><option value="-12">-12 dBm</option><option value="-9">-9 dBm</option><option value="-6">-6 dBm</option><option value="-3">-3 dBm</option><option value="0" selected>0 dBm</option><option value="3">3 dBm</option><option value="6">6 dBm</option><option value="9">9 dBm</option></select></div>
+    <div class="form-group"><label>广播信道</label>
+      <div style="display:flex;gap:12px;align-items:center;padding-top:4px">
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;color:#333"><input type="checkbox" id="ch37" checked onchange="onChToggle()"> CH37</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;color:#333"><input type="checkbox" id="ch38" checked onchange="onChToggle()"> CH38</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;color:#333"><input type="checkbox" id="ch39" checked onchange="onChToggle()"> CH39</label>
+      </div>
+    </div>
+  </div>
+  <input type="hidden" id="ach" value="7">
   <div class="form-row"><div class="form-group"><label>广播时长（秒）</label><input type="number" id="ad" value="0" min="0" max="3600"><div class="hint">0=持续广播</div></div></div>
 </div>
 
@@ -188,6 +202,38 @@ var W=[],M=0;
 var AdS=[], SrS=[];
 // 当前模式：0=可视化, 1=原始
 var AdvMode=0, SrMode=0;
+
+// 信道多选 → 位掩码；至少选一个
+function onChToggle(){
+  var c37=document.getElementById('ch37');
+  var c38=document.getElementById('ch38');
+  var c39=document.getElementById('ch39');
+  var v=0;
+  if(c37.checked)v|=1;
+  if(c38.checked)v|=2;
+  if(c39.checked)v|=4;
+  if(v===0){
+    // 恢复触发事件的 checkbox 状态并提示
+    alert('至少选择一个广播信道');
+    // 找出是哪个被取消了
+    if(!c37.checked && !c38.checked && !c39.checked){
+      // 三个都取消不可能，因为至少有一个在触发前是选中的；重新计算
+      // 用 setChannelMapFromMask 恢复到上次有效值
+      var oldV=parseInt(document.getElementById('ach').value)||7;
+      setChannelMapFromMask(oldV);
+    }
+    return;
+  }
+  document.getElementById('ach').value=v;
+}
+
+// 位掩码 → 恢复 checkbox
+function setChannelMapFromMask(mask){
+  document.getElementById('ch37').checked=(mask&1)!==0;
+  document.getElementById('ch38').checked=(mask&2)!==0;
+  document.getElementById('ch39').checked=(mask&4)!==0;
+  document.getElementById('ach').value=mask;
+}
 
 function switchMode(m){M=m;document.querySelectorAll('#modeTabs .tab').forEach(function(t){t.classList.remove('act')});['panel0','panel1','panel2'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.remove('act')});document.querySelector('#modeTabs .tab[data-mode="'+m+'"]').classList.add('act');var p=document.getElementById('panel'+m);if(p)p.classList.add('act')}
 
@@ -320,7 +366,7 @@ function renderAdList(){
   var tb=document.getElementById('adList');
   if(!AdS.length){tb.innerHTML='<tr><td colspan="4" class="empty">暂未添加 AD 结构</td></tr>';return}
   var h='';
-  for(var i=0;i<AdS.length;i++){var e=AdS[i];h+='<tr><td><span class="tag">0x'+e.type+' '+e.name+'</span></td><td><code>'+e.hex+'</code></td><td>'+e.size+'B</td><td><button class="btn btn-danger btn-sm" onclick="deleteAdEntry('+i+')">删除</button></td></tr>'}
+  for(var i=0;i<AdS.length;i++){var e=AdS[i];h+='<tr class="drag" draggable="true" data-idx="'+i+'" data-kind="ad"><td><span class="drag-icon">⠿</span><span class="tag">0x'+e.type+' '+e.name+'</span></td><td><code>'+e.hex+'</code></td><td>'+e.size+'B</td><td><button class="btn btn-danger btn-sm" onclick="deleteAdEntry('+i+')">删除</button></td></tr>'}
   tb.innerHTML=h;
 }
 
@@ -328,7 +374,7 @@ function renderSrList(){
   var tb=document.getElementById('srList');
   if(!SrS.length){tb.innerHTML='<tr><td colspan="4" class="empty">暂未添加 AD 结构</td></tr>';return}
   var h='';
-  for(var i=0;i<SrS.length;i++){var e=SrS[i];h+='<tr><td><span class="tag">0x'+e.type+' '+e.name+'</span></td><td><code>'+e.hex+'</code></td><td>'+e.size+'B</td><td><button class="btn btn-danger btn-sm" onclick="deleteSrEntry('+i+')">删除</button></td></tr>'}
+  for(var i=0;i<SrS.length;i++){var e=SrS[i];h+='<tr class="drag" draggable="true" data-idx="'+i+'" data-kind="sr"><td><span class="drag-icon">⠿</span><span class="tag">0x'+e.type+' '+e.name+'</span></td><td><code>'+e.hex+'</code></td><td>'+e.size+'B</td><td><button class="btn btn-danger btn-sm" onclick="deleteSrEntry('+i+')">删除</button></td></tr>'}
   tb.innerHTML=h;
 }
 
@@ -363,9 +409,11 @@ function loadConfig(){
     var ap=d.advConfig||{};
     document.getElementById('am').value=ap.customMac||'';
     document.getElementById('ap').value=ap.txPower||0;
-    document.getElementById('ai').value=ap.advInterval||100;
+    document.getElementById('ai_min').value=ap.advIntervalMin||100;
+    document.getElementById('ai_max').value=ap.advIntervalMax||100;
     document.getElementById('ad').value=ap.advDuration||0;
     document.getElementById('at').value=ap.advType||0;
+    setChannelMapFromMask(ap.channelMap!==undefined?ap.channelMap:7);
     // 智能解析加载的 HEX
     if(ap.advDataHex){
       var parsed=parseHexToStructs(ap.advDataHex);
@@ -409,9 +457,10 @@ function saveAll(){
   var macErr=validateMac(mac);
   if(macErr){alert('❌ MAC 地址错误：\n'+macErr);return}
   // 校验广播间隔
-  var interval=parseInt(document.getElementById('ai').value)||100;
-  var intErr=validateInterval(interval);
-  if(intErr){alert('❌ 广播间隔错误：\n'+intErr);return}
+  var minInt=parseInt(document.getElementById('ai_min').value)||100;
+  var maxInt=parseInt(document.getElementById('ai_max').value)||100;
+  if(minInt<20||minInt>4000||maxInt<20||maxInt>4000){alert('❌ 广播间隔范围 20~4000');return}
+  if(maxInt<minInt){alert('❌ 最大间隔必须 ≥ 最小间隔');return}
   // 校验广播数据长度
   var ah=getAdvHex(); var aB=hexBytes(ah);
   if(aB>31){alert('❌ 广播数据长度为 '+aB+' 字节，超过 31 字节限制！\n请删除一些 AD 结构或缩短数据。');return}
@@ -419,7 +468,7 @@ function saveAll(){
   if(aS>31){alert('❌ 扫描响应数据长度为 '+aS+' 字节，超过 31 字节限制！');return}
 
   var sp={scanInterval:parseInt(document.getElementById('si').value)||100,scanWindow:parseInt(document.getElementById('sw').value)||99,scanType:parseInt(document.getElementById('st').value)||1,scanDuplicate:document.getElementById('sd').value==='1',ownAddrType:0,scanFilterPolicy:0};
-  var ap={customMac:mac,advDataHex:ah,scanRespHex:as_x,txPower:parseInt(document.getElementById('ap').value)||0,advInterval:interval,advDuration:parseInt(document.getElementById('ad').value)||0,advType:parseInt(document.getElementById('at').value)||0};
+  var ap={customMac:mac,advDataHex:ah,scanRespHex:as_x,txPower:parseInt(document.getElementById('ap').value)||0,advIntervalMin:minInt,advIntervalMax:maxInt,advDuration:parseInt(document.getElementById('ad').value)||0,advType:parseInt(document.getElementById('at').value)||0,channelMap:parseInt(document.getElementById('ach').value)||7};
   var payload={deviceMode:M,whitelist:W,scanParams:sp,advConfig:ap};
   fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json()}).then(function(){alert('✅ 保存成功，重启后生效')}).catch(function(){alert('❌ 保存失败')});
 }
@@ -440,7 +489,69 @@ document.getElementById('at').addEventListener('change',function(){var t=parseIn
 document.getElementById('ahr').addEventListener('input',updateLenBars);
 document.getElementById('asr').addEventListener('input',updateLenBars);
 
-window.addEventListener('DOMContentLoaded',loadConfig);
+// ========== 拖拽排序 ==========
+var dgSrc=null,dkSrc=null;
+function initDrag(){
+  ['adList','srList'].forEach(function(tbId){
+    var tb=document.getElementById(tbId);
+    if(!tb)return;
+    tb.addEventListener('dragstart',function(e){
+      var tr=e.target.closest('tr.drag');
+      if(!tr)return;
+      dgSrc=parseInt(tr.getAttribute('data-idx'));
+      dkSrc=tr.getAttribute('data-kind');
+      e.dataTransfer.effectAllowed='move';
+      e.dataTransfer.setData('text/plain','');
+      tr.style.opacity='0.5';
+    });
+    tb.addEventListener('dragend',function(e){
+      var tr=e.target.closest('tr.drag');
+      if(tr)tr.style.opacity='1';
+      dgSrc=null;dkSrc=null;
+      tb.querySelectorAll('tr').forEach(function(r){r.classList.remove('drag-over')});
+    });
+    tb.addEventListener('dragover',function(e){
+      e.preventDefault();
+      e.dataTransfer.dropEffect='move';
+      var tr=e.target.closest('tr.drag');
+      if(!tr)return;
+      tb.querySelectorAll('tr').forEach(function(r){r.classList.remove('drag-over')});
+      tr.classList.add('drag-over');
+    });
+    tb.addEventListener('drop',function(e){
+      e.preventDefault();
+      var tr=e.target.closest('tr.drag');
+      if(!tr||dgSrc===null||dkSrc===null)return;
+      var dstIdx=parseInt(tr.getAttribute('data-idx'));
+      var dstKind=tr.getAttribute('data-kind');
+      if(dkSrc!==dstKind)return;
+      if(dgSrc===dstIdx)return;
+      // 移动数组元素
+      moveArrayItem(dkSrc,dgSrc,dstIdx);
+      // 重新渲染
+      if(dkSrc==='ad'){renderAdList();}
+      else{renderSrList();}
+      updateLenBars();
+    });
+    // 修复 tr 内 button 不触发 drag 的问题
+    tb.addEventListener('dragleave',function(e){
+      var tr=e.target.closest('tr.drag');
+      if(tr)tr.classList.remove('drag-over');
+    });
+  });
+}
+
+function moveArrayItem(kind,fromIdx,toIdx){
+  var arr=(kind==='ad')?AdS:SrS;
+  var item=arr[fromIdx];
+  arr.splice(fromIdx,1);
+  arr.splice(toIdx,0,item);
+}
+
+window.addEventListener('DOMContentLoaded',function(){
+  loadConfig();
+  initDrag();
+});
 </script>
 </body>
 </html>

@@ -106,13 +106,15 @@ String ConfigManager::configToJson() const {
 
     // BLE 广播参数
     JsonObject ap = doc["advConfig"].to<JsonObject>();
-    ap["customMac"]     = _advConfig.customMac;
-    ap["advDataHex"]    = _advConfig.advDataHex;
-    ap["scanRespHex"]   = _advConfig.scanRespHex;
-    ap["txPower"]       = _advConfig.txPower;
-    ap["advInterval"]   = _advConfig.advInterval;
-    ap["advDuration"]   = _advConfig.advDuration;
-    ap["advType"]       = _advConfig.advType;
+    ap["customMac"]       = _advConfig.customMac;
+    ap["advDataHex"]      = _advConfig.advDataHex;
+    ap["scanRespHex"]     = _advConfig.scanRespHex;
+    ap["txPower"]         = _advConfig.txPower;
+    ap["advIntervalMin"]  = _advConfig.advIntervalMin;
+    ap["advIntervalMax"]  = _advConfig.advIntervalMax;
+    ap["advDuration"]     = _advConfig.advDuration;
+    ap["advType"]         = _advConfig.advType;
+    ap["channelMap"]      = _advConfig.channelMap;
 
     String out;
     serializeJson(doc, out);
@@ -165,13 +167,15 @@ bool ConfigManager::configFromJson(const String& json) {
     // BLE 广播参数
     JsonObject ap = doc["advConfig"];
     if (!ap.isNull()) {
-        _advConfig.customMac     = ap["customMac"]   | "";
-        _advConfig.advDataHex    = ap["advDataHex"]  | "";
-        _advConfig.scanRespHex   = ap["scanRespHex"] | "";
-        _advConfig.txPower       = ap["txPower"]     | 0;
-        _advConfig.advInterval   = ap["advInterval"] | 100;
-        _advConfig.advDuration   = ap["advDuration"] | 0;
-        _advConfig.advType       = ap["advType"]     | 0;
+        _advConfig.customMac       = ap["customMac"]       | "";
+        _advConfig.advDataHex      = ap["advDataHex"]      | "";
+        _advConfig.scanRespHex     = ap["scanRespHex"]     | "";
+        _advConfig.txPower         = ap["txPower"]         | 0;
+        _advConfig.advIntervalMin  = ap["advIntervalMin"]  | 100;
+        _advConfig.advIntervalMax  = ap["advIntervalMax"]  | 100;
+        _advConfig.advDuration     = ap["advDuration"]     | 0;
+        _advConfig.advType         = ap["advType"]         | 0;
+        _advConfig.channelMap      = ap["channelMap"]      | 7;
     }
 
     return true;

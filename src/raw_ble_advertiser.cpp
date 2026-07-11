@@ -47,7 +47,8 @@ void RawBleAdvertiser::applyConfig() {
 
     const BleAdvConfig& cfg = _config->getAdvConfig();
     setAdvertisementType(static_cast<esp_ble_adv_type_t>(cfg.advType));
-    setAdvertisementIntervals(cfg.advInterval, cfg.advInterval);
+    setAdvertisementIntervals(cfg.advIntervalMin, cfg.advIntervalMax);
+    setAdvertisementChannelMap(static_cast<esp_ble_adv_channel_t>(cfg.channelMap));
     setTxPower(cfg.txPower);
     setScanResponseEnabled(cfg.scanRespHex.length() > 0);
     setDuration(cfg.advDuration);
