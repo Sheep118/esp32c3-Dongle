@@ -434,19 +434,44 @@ function renderTable(){
 
 function addEntry(){
   var t=parseInt(document.getElementById('ft').value),v=document.getElementById('fv').value.trim(),c=document.getElementById('ci').value.trim();
-  if(t===2){if(!c){alert('请输入厂商 ID（HEX）');return}var cid=parseInt(c,16);if(isNaN(cid)||cid<0||cid>65535){alert('无效 HEX');return}W.push({type:t,value:"",companyId:cid,enabled:true})}
-  else{if(!v){alert('请输入值');return}W.push({type:t,value:v,companyId:0,enabled:true})}
+  if(t===2){
+    // 厂商 ID：必须 1~4 位有效 HEX，范围 0x0000~0xFFFF
+    if(!c){alert('请输入厂商 ID（HEX）');return}
+    if(!/^[0-9A-Fa-f]{1,4}$/.test(c)){alert('厂商 ID 必须是 1~4 位 HEX 字符（如 0059、4C00）');return}
+    var cid=parseInt(c,16);
+    if(isNaN(cid)||cid<0||cid>65535){alert('厂商 ID 无效，范围 0x0000~0xFFFF');return}
+    W.push({type:t,value:"",companyId:cid,enabled:true})
+  }
+  else if(t===0){
+    // MAC 地址：校验格式 AA:BB:CC:DD:EE:FF
+    var m=v.toUpperCase();
+    if(!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(m)){alert('MAC 格式错误，应为 AA:BB:CC:DD:EE:FF');return}
+    W.push({type:t,value:m,companyId:0,enabled:true})
+  }
+  else{
+    // 广播名称
+    if(!v){alert('请输入广播名称');return}
+    W.push({type:t,value:v,companyId:0,enabled:true})
+  }
   renderTable();document.getElementById('fv').value='';document.getElementById('ci').value='';
 }
 
 function deleteEntry(i){W.splice(i,1);renderTable()}
 
 function saveAll(){
-  // 校验 MAC
+  // ====== 扫描参数校验 ======
+  var si=parseInt(document.getElementById('si').value)||100;
+  var sw=parseInt(document.getElementById('sw').value)||99;
+  if(isNaN(si)||si<4||si>16384){alert('❌ 扫描间隔范围 4~16384 (×0.625ms)');return}
+  if(isNaN(sw)||sw<4||sw>16384){alert('❌ 扫描窗口范围 4~16384 (×0.625ms)');return}
+  if(sw>si){alert('❌ 扫描窗口 ('+sw+') 必须 ≤ 扫描间隔 ('+si+')');return}
+
+  // ====== 广播 MAC 校验 ======
   var mac=document.getElementById('am').value.trim();
   var macErr=validateMac(mac);
   if(macErr){alert('❌ MAC 地址错误：\n'+macErr);return}
-  // 校验广播间隔
+
+  // ====== 广播间隔校验 ======
   var minInt=parseInt(document.getElementById('ai_min').value)||100;
   var maxInt=parseInt(document.getElementById('ai_max').value)||100;
   if(minInt<20||minInt>4000||maxInt<20||maxInt>4000){alert('❌ 广播间隔范围 20~4000');return}
