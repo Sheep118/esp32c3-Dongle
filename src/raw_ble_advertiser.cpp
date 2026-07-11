@@ -3,8 +3,8 @@
 RawBleAdvertiser* RawBleAdvertiser::s_instance = nullptr;
 
 RawBleAdvertiser::RawBleAdvertiser() {
-    _advParams.adv_int_min = 0x20;
-    _advParams.adv_int_max = 0x40;
+    _advParams.adv_int_min = 0x20; // 0.625*32= 20ms
+    _advParams.adv_int_max = 0x40; // 0.625*64= 40ms
     _advParams.adv_type = ADV_TYPE_IND;
     _advParams.own_addr_type = BLE_ADDR_TYPE_PUBLIC;
     _advParams.channel_map = ADV_CHNL_ALL;
@@ -31,8 +31,8 @@ bool RawBleAdvertiser::begin(ConfigManager* config) {
     if (cfg.customMac.length() > 0) {
         setCustomMac(cfg.customMac);
     }
-
-    if (!begin("BLE-Dongle-Adv")) {
+    //初始化BLEdevice
+    if (!begin()) { //默认参数是 "BLE-Dongle-Adv"
         return false;
     }
 
@@ -63,12 +63,40 @@ void RawBleAdvertiser::applyConfig() {
     } else {
         clearScanResponseData();
     }
+
+    if(cfg.advDataHex.length() == 0 && cfg.scanRespHex.length() == 0) { //如果两个数据包都为空，则生成默认广播数据包
+        // 构造默认广播数据包: Flags + 设备名 + TX Power + 连接间隔
+        std::vector<uint8_t> advData = {0x02, 0x01, 0x06}; // Flags
+        std::vector<uint8_t> nameData;
+        genAdStructByDeviceName(_deviceName, nameData);
+        advData.insert(advData.end(), nameData.begin(), nameData.end());
+        std::vector<uint8_t> txPowerData;
+        genAdStructByTxPower(cfg.txPower, txPowerData);
+        advData.insert(advData.end(), txPowerData.begin(), txPowerData.end());
+        std::vector<uint8_t> intervalData;
+        genAdStructByInternal(cfg.advInterval, cfg.advInterval, intervalData);
+        advData.insert(advData.end(), intervalData.begin(), intervalData.end());
+        setAdvertisementData(advData.data(), advData.size());
+    }
 }
 
 void RawBleAdvertiser::setDeviceName(const char* deviceName) {
     _deviceName = deviceName ? deviceName : "";
     if (!_deviceName.isEmpty()) {
         esp_ble_gap_set_device_name(_deviceName.c_str());
+    }
+}
+
+void RawBleAdvertiser::genAdStructByDeviceName(const String& deviceNanme, std::vector<uint8_t>& advData) {
+    advData.clear();
+    if (deviceNanme.isEmpty()) return;
+
+    size_t nameLen = deviceNanme.length();
+    // AD Structure: Length (1) + AD Type (1) + Name bytes
+    advData.push_back((uint8_t)(nameLen + 1));  // Length = AD type (1) + name length
+    advData.push_back(0x09);                     // AD type: Complete Local Name
+    for (size_t i = 0; i < nameLen; i++) {
+        advData.push_back((uint8_t)deviceNanme[i]);
     }
 }
 
@@ -94,6 +122,14 @@ void RawBleAdvertiser::setTxPower(int8_t txPowerDbm) {
     esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, powerLevel);
 }
 
+void RawBleAdvertiser::genAdStructByTxPower(const int8_t txPower, std::vector<uint8_t>& advData) {
+    advData.clear();
+    // AD Structure: Length (1) + AD Type (1) + TX Power bytes
+    advData.push_back(0x02); // Length of TX Power Level field
+    advData.push_back(0x0A); // TX Power Level AD type
+    advData.push_back((uint8_t)txPower);
+}
+
 void RawBleAdvertiser::setAdvertisementType(esp_ble_adv_type_t type) {
     _advParams.adv_type = type;
 }
@@ -105,6 +141,17 @@ void RawBleAdvertiser::setAdvertisementIntervals(uint16_t minInterval, uint16_t 
 
 void RawBleAdvertiser::setAdvertisementChannelMap(esp_ble_adv_channel_t channelMap) {
     _advParams.channel_map = channelMap;
+}
+
+void RawBleAdvertiser::genAdStructByInternal(uint16_t minInterval, uint16_t maxInterval, std::vector<uint8_t>& advData) {
+    advData.clear();
+    // AD Structure: Length (1) + AD Type (1) + Min Interval (2) + Max Interval (2)
+    advData.push_back(0x05); // Length of Slave Connection Interval Range field
+    advData.push_back(0x12); // Slave Connection Interval Range AD type
+    advData.push_back(minInterval & 0xFF);
+    advData.push_back((minInterval >> 8) & 0xFF);
+    advData.push_back(maxInterval & 0xFF);
+    advData.push_back((maxInterval >> 8) & 0xFF);
 }
 
 void RawBleAdvertiser::setScanResponseEnabled(bool enabled) {
@@ -138,6 +185,7 @@ bool RawBleAdvertiser::setAdvertisementDataHex(const String& hex) {
 }
 
 bool RawBleAdvertiser::setScanResponseDataHex(const String& hex) {
+    setScanResponseEnabled(!hex.isEmpty()); //如果设置了扫描响应包，则启用扫描响应
     return parseHex(hex, _scanResponseData);
 }
 

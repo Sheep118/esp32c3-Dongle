@@ -18,10 +18,13 @@ public:
     void applyConfig();
 
     void setDeviceName(const char* deviceName);
+    void genAdStructByDeviceName(const String& deviceName, std::vector<uint8_t>& advData);
     bool setCustomMac(const String& macStr);
     void setTxPower(int8_t txPowerDbm);
+    void genAdStructByTxPower(const int8_t txPower, std::vector<uint8_t>& advData);
     void setAdvertisementType(esp_ble_adv_type_t type);
     void setAdvertisementIntervals(uint16_t minInterval, uint16_t maxInterval);
+    void genAdStructByInternal(uint16_t minInterval, uint16_t maxInterval, std::vector<uint8_t>& advData);
     void setAdvertisementChannelMap(esp_ble_adv_channel_t channelMap);
     void setScanResponseEnabled(bool enabled);
     void setDuration(uint32_t durationSeconds);

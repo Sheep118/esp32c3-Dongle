@@ -25,7 +25,7 @@
 #include "button.h"
 #include "config_manager.h"
 #include "ble_scanner.h"
-#include "ble_advertiser.h"
+#include "raw_ble_advertiser.h"
 #include "wifi_config.h"
 
 // ==================== 全局对象 ====================
@@ -34,7 +34,7 @@ Led         ledError(LED_BUILTIN_2_PIN, LED_ACTIVE_HIGH);    // 数据/错误灯
 Button      btnBoot(BUTTON_PIN, BUTTON_ACTIVE_LOW);
 ConfigManager config;
 BleScanner  bleScanner;
-BleAdvertiser bleAdvertiser;
+RawBleAdvertiser bleAdvertiser;
 WifiConfigServer wifiServer;
 
 // ==================== 运行时模式 ====================
@@ -248,9 +248,9 @@ void setup() {
     advertiser.setAdvertisementType(ADV_TYPE_IND);
     advertiser.setAdvertisementIntervals(0x20, 0x40);
 
-    advertiser.setAdvertisementDataHex("02010606097368656570");
-    advertiser.setScanResponseDataHex("03FF1122");
-    advertiser.setScanResponseEnabled(true);
+    // advertiser.setAdvertisementDataHex("02010606097368656570");
+    // advertiser.setScanResponseDataHex("03FF1122");
+    // advertiser.setScanResponseEnabled(true);
     advertiser.startAdvertising();
 }
 
