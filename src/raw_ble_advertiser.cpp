@@ -65,7 +65,7 @@ void RawBleAdvertiser::applyConfig() {
     }
 
     if(cfg.advDataHex.length() == 0 && cfg.scanRespHex.length() == 0) { //如果两个数据包都为空，则生成默认广播数据包
-        // 构造默认广播数据包: Flags + 设备名 + TX Power + 连接间隔
+        // 构造默认广播数据包: Flags + 设备名 + TX Power + 连接时的偏好的连接间隔
         std::vector<uint8_t> advData = {0x02, 0x01, 0x06}; // Flags
         std::vector<uint8_t> nameData;
         genAdStructByDeviceName(_deviceName, nameData);
@@ -73,9 +73,10 @@ void RawBleAdvertiser::applyConfig() {
         std::vector<uint8_t> txPowerData;
         genAdStructByTxPower(cfg.txPower, txPowerData);
         advData.insert(advData.end(), txPowerData.begin(), txPowerData.end());
-        std::vector<uint8_t> intervalData;
-        genAdStructByInternal(cfg.advInterval, cfg.advInterval, intervalData);
-        advData.insert(advData.end(), intervalData.begin(), intervalData.end());
+        // std::vector<uint8_t> intervalData;
+        // 这里拿广播间隔放在广播数据包中是错误的，因为广播数据包的间隔数据是偏好的连接间隔，所以暂时在默认数据包中去掉
+        // genAdStructByInternal(cfg.advInterval, cfg.advInterval, intervalData);
+        // advData.insert(advData.end(), intervalData.begin(), intervalData.end());
         setAdvertisementData(advData.data(), advData.size());
     }
 }
