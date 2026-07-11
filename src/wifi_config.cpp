@@ -3,18 +3,13 @@
 #include <ArduinoJson.h>
 #include <lwip/dns.h>
 #include <lwip/netif.h>
-#include "ble_scanner.h"
 #include "webpage.h"
 
 #define LOG_TAG "WiFi"
 #include "log.h"
 
 // =============== WifiConfigServer ===============
-WifiConfigServer::WifiConfigServer() : _config(nullptr), _server(nullptr), _bleScanner(nullptr) {}
-
-void WifiConfigServer::setBleScanner(BleScanner* scanner) {
-    _bleScanner = scanner;
-}
+WifiConfigServer::WifiConfigServer() : _config(nullptr), _server(nullptr) {}
 
 bool WifiConfigServer::begin(ConfigManager* config) {
     _config = config;
@@ -164,10 +159,7 @@ void WifiConfigServer::_handleSaveConfig() {
     if (_config->configFromJson(body)) {
         // configFromJson 从json中更新 _config 的内容，调用 save() 保存到文件
         _config->save();
-        // 通知 BLE 扫描器热应用新的扫描参数
-        if (_bleScanner) {
-            _bleScanner->applyScanParams();
-        }
+
         _server->send(200, "application/json", "{\"message\":\"保存成功\",\"status\":\"ok\"}");
         LOG_INFO("Config saved via web");
     } else {

@@ -26,9 +26,6 @@ class WifiConfigServer {
 public:
     WifiConfigServer();
 
-    /** 设置 BLE Scanner 引用（用于热应用扫描参数） */
-    void setBleScanner(BleScanner* scanner);
-
     /** 启动 AP 和 Web 服务器，同时启动 Captive Portal (DNS + NotFound) */
     bool begin(ConfigManager* config);
 
@@ -43,7 +40,6 @@ private:
     WebServer*     _server;
     WiFiUDP        _dnsUdp;       ///< 手动 DNS 响应 UDP socket
     IPAddress      _apIp;          ///< AP IP 地址（DNS 解析到此）
-    BleScanner*    _bleScanner;
 
     /** 注册所有 API 路由 */
     void _setupRoutes();

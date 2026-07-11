@@ -153,7 +153,6 @@ void setupBleAdvMode() {
 // ==================== Wi-Fi 配置模式 ====================
 void setupWifiConfigMode() {
     ledStatus.setMode(LedMode::BLINK, LED_WIFI_SLOW_BLINK_MS);
-    wifiServer.setBleScanner(&bleScanner);
     if (!wifiServer.begin(&config)) {
         LOG_ERROR("WiFi config server init failed!");
         ledStatus.setMode(LedMode::OFF);
