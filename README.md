@@ -92,7 +92,9 @@ graph TD
 
 ## 🌐 Web 配置页面
 
-![Web 配置页面](doc/web_config_screenshot.png)
+![Web Scanner配置页面](doc/Scanner.png)
+
+![Web Advertiser配置页面](doc/advertiser.png)
 
 ### 功能一览
 
