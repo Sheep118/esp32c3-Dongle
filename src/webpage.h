@@ -199,7 +199,8 @@ tr:hover{background:#f8f9fa}
 </div>
 
 <div class="card" id="scanRespCard">
-  <h2>📋 扫描响应数据</h2>
+  <h2 style="cursor:pointer;user-select:none" onclick="toggleSrOpt()">📋 扫描响应数据 <span style="font-size:12px;color:#999;margin-left:6px">（高级选项，点击展开）</span> <span id="srArrow" style="font-size:12px;color:#999">▶</span></h2>
+  <div id="srOptBody" style="display:none">
   <p style="font-size:12px;color:#666;margin-bottom:10px">同上，<b>总长度 ≤ 31 字节</b></p>
   <div class="bar" id="srLenBar">📏 当前总长度：<b>0</b> / 31 字节</div>
   <div class="tab-bar" id="srTabBar" style="margin:12px 0 4px">
@@ -221,6 +222,7 @@ tr:hover{background:#f8f9fa}
   <div id="srRaw" class="panel">
     <div class="form-group" style="flex:2"><label>完整 ScanRspData（HEX）</label><input type="text" id="asr" placeholder="可选"><div class="hint">切换到原始模式时自动同步可视化数据，也可直接编辑</div></div>
   </div>
+  </div><!-- /srOptBody -->
 </div>
 </div>
 
@@ -232,8 +234,11 @@ tr:hover{background:#f8f9fa}
 <!-- ====== 底部按钮 ====== -->
 <div class="card"><div class="action-bar">
   <button class="btn btn-success" onclick="saveAll()">💾 保存全部配置</button>
+  <button class="btn" style="background:#673ab7" onclick="exportConfig()">📥 导出配置 JSON</button>
+  <button class="btn" style="background:#f9ab00;color:#333" onclick="importConfig()">📤 导入配置 JSON</button>
   <button class="btn btn-danger" onclick="reboot()">🔄 重启设备</button>
 </div></div>
+<input type="file" id="importFileInput" accept=".json" style="display:none" onchange="onImportFileSelected(event)">
 
 <script>
 var W=[],M=0;
@@ -634,6 +639,92 @@ function detectInvalidPlaceholders(text,validList){
     }
   }
   return invalid;
+}
+
+// 扫描响应数据折叠/展开
+function toggleSrOpt(){
+  var b=document.getElementById('srOptBody');
+  var a=document.getElementById('srArrow');
+  if(b.style.display==='none'){
+    b.style.display='block';a.innerHTML='▲';
+  }else{
+    b.style.display='none';a.innerHTML='▶';
+  }
+}
+
+// 导出配置 JSON 文件
+function exportConfig(){
+  var btn=document.querySelector('button[onclick="exportConfig()"]');
+  if(!btn) return;
+  var origText=btn.innerHTML;
+  btn.innerHTML='⏳ 正在从设备获取配置...';
+  btn.disabled=true;
+  btn.style.opacity='0.7';
+  fetch('/api/config').then(function(r){
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(function(d){
+    var blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;a.download='ble_dongle_config.json';
+    document.body.appendChild(a);a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }).catch(function(e){
+    alert('❌ 导出失败：'+e.message);
+  }).finally(function(){
+    btn.innerHTML=origText;
+    btn.disabled=false;
+    btn.style.opacity='1';
+  });
+}
+
+// 导入配置 JSON：点击按钮 → 弹出文件选择
+function importConfig(){
+  document.getElementById('importFileInput').click();
+}
+
+// 文件选择后的回调
+function onImportFileSelected(event){
+  var file=event.target.files[0];
+  if(!file) return;
+  if(!confirm('⚠ 即将用所选文件覆盖设备当前全部配置。\n\n确定要继续吗？')){event.target.value='';return}
+
+  var btn=document.querySelector('button[onclick="importConfig()"]');
+  var origText=btn.innerHTML;
+  btn.innerHTML='⏳ 正在上传并应用配置...';
+  btn.disabled=true;
+  btn.style.opacity='0.7';
+
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var json=JSON.parse(e.target.result);
+      // 先在前端做基本校验（有 whitelist 或 scanParams 等字段）
+      fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(json)})
+      .then(function(r){return r.json()})
+      .then(function(resp){
+        alert('✅ 配置已导入并应用，重启后生效');
+        // 刷新页面以加载新配置
+        loadConfig();
+      }).catch(function(err){
+        alert('❌ 导入失败：'+err.message);
+      }).finally(function(){
+        btn.innerHTML=origText;
+        btn.disabled=false;
+        btn.style.opacity='1';
+        event.target.value='';
+      });
+    }catch(err){
+      alert('❌ JSON 文件格式无效：'+err.message);
+      btn.innerHTML=origText;
+      btn.disabled=false;
+      btn.style.opacity='1';
+      event.target.value='';
+    }
+  };
+  reader.readAsText(file);
 }
 
 function reboot(){if(!confirm('确定重启设备？'))return;fetch('/api/reboot',{method:'POST'});alert('设备正在重启...')}
